@@ -12,16 +12,16 @@ import qualified System.IO as IO
 -- | Stack is list of states
 type Stack = [State]
 
-run :: Stack -> Answer -> Stack
+run :: Stack -> Answer -> IO Stack
 run [] _ = error "empty stack"
-run (s : ss) i = let ns = next s i in proceed ns ss
+run (s : ss) i = next s i >>= proceed ss
 
-proceed :: Cont -> Stack -> Stack
-proceed (Cont s) rest = s : rest
-proceed (Start s s') rest = s' : s : rest
-proceed (End s) rest = case rest of
-  (h:t) -> proceed (next h (Answer $ show s)) t
-  []    -> []
+proceed :: Stack -> Cont -> IO Stack
+proceed rest (Cont s) = return $ s : rest
+proceed rest (Start s s') = return $ s' : s : rest
+proceed rest (End s) = case rest of
+  (h:t) -> next h (Answer $ show s) >>= proceed t
+  []    -> return []
 
 serialize :: Stack -> [String]
 serialize = map save
@@ -33,8 +33,8 @@ deserialize = mapM readMaybe
 
 
 -- | Convert actual data to stack
-stack :: IsState s => [s] -> Stack
-stack = map state
+stack :: IsState s => [s] -> IO Stack
+stack = mapM state
 
 -- | Union of states, to specify type of 'deserialize'
 data BiState l r = LState l | RState r
@@ -63,9 +63,9 @@ loopStack current@(h:_) = do
   putStrLn $ "saved = " ++ show saved
   case (deserialize saved :: Maybe [BiState (BiState Checkout.Suspended Size.Suspended) TryAtHome.Suspended]) of
     Just loaded -> do
-      let next' = run $ stack loaded
+      next' <- run <$> stack loaded
       i <- Answer <$> readLn
-      let ns = next' i
+      ns <- next' i
       loopStack ns
     Nothing -> putStrLn "parse error"
 
@@ -84,7 +84,7 @@ loopStack current@(h:_) = do
 
 test' :: IO ()
 test' = do
-  let start = [state $ TryAtHome.Suspended TryAtHome.AskProduct ()] :: Stack
+  start <- sequence [state $ TryAtHome.Suspended TryAtHome.AskProduct ()]
   loopStack start
 
 main = do

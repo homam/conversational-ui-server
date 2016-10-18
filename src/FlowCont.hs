@@ -6,16 +6,16 @@ newtype Answer = Answer { unAnswer :: String }
 data Cont = Cont State | Start State State | End State deriving (Show)
 
 -- | Continue in the same flow
-cont :: IsState s => s -> Cont
-cont i = Cont $ state i
+cont :: IsState s => s -> IO Cont
+cont i = Cont <$> state i
 
 -- | Start a new flow (from inside the current flow)
-start :: (IsState s, IsState s') => s -> s' -> Cont
-start s s' = Start (state s) (state s')
+start :: (IsState s, IsState s') => s -> s' -> IO Cont
+start s s' = Start <$> state s <*> state s'
 
 -- | End the current flow
-end :: IsState s => s -> Cont
-end s = End $ state s
+end :: IsState s => s -> IO Cont
+end s = End <$> state s
 
 -- | Whether the state is a Question
 class IsQuestion s where
@@ -23,7 +23,7 @@ class IsQuestion s where
 
 -- | State is something, which has the next action, a string representation and maybe a question
 data State = State {
-  next :: Answer -> Cont,
+  next :: Answer -> IO Cont,
   question :: Maybe String,
   save :: String
 }
@@ -32,10 +32,10 @@ data State = State {
 class (Read s, Show s, IsQuestion s) => IsState s where
 
   -- | Specifies how to proceed given the current state 's' and an `Answer`
-  step :: s -> Answer -> Cont
+  step :: s -> Answer -> IO Cont
 
-  state :: s -> State
-  state x = State {
+  state :: s -> IO State
+  state x = return State {
     next = step x,
     question = ask x,
     save = show x
