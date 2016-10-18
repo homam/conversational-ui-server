@@ -27,18 +27,18 @@ data Suspended where
   Suspended :: Show as => Stage as -> as -> Suspended
 
 instance Show Suspended where
-  show (Suspended stage as) = "Suspended " ++ show stage ++ " " ++ show as
+  show (Suspended stage as) = "Size.Suspended " ++ show stage ++ " " ++ show as
 
 instance Read Suspended where
   readsPrec = readsPrecRP
 
 instance ReadParsec Suspended where
-  readParsec = parseSuspended [
-        read' "AskSize" AskSize
-      , read' "AskDoYou" AskDoYou
+  readParsec = parseSuspended "Size" [
+        read' "AskSize"   AskSize
+      , read' "AskDoYou"  AskDoYou
       , read' "AskWeight" AskWeight
       , read' "AskHeight" AskHeight
-      , read' "AskFinal" AskFinal
+      , read' "AskFinal"  AskFinal
     ]
     where
       read' name = parseStage name . Suspended

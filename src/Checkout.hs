@@ -19,13 +19,13 @@ data Suspended where
   Suspended :: Show as => Stage as -> as -> Suspended
 
 instance Show Suspended where
-  show (Suspended stage as) = "Suspended " ++ show stage ++ " " ++ show as
+  show (Suspended stage as) = "Checkout.Suspended " ++ show stage ++ " " ++ show as
 
 instance Read Suspended where
   readsPrec = readsPrecRP
 
 instance ReadParsec Suspended where
-  readParsec = parseSuspended [
+  readParsec = parseSuspended "Checkout" [
         read' "AskCheckoutBillingInfo" AskCheckoutBillingInfo
       , read' "AskFinal" AskFinal
     ]

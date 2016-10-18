@@ -8,11 +8,11 @@ import Text.Parsec.Prim (ParsecT)
 import Data.Functor.Identity (Identity)
 
 -- | By convenction we expect every Suspended types to be shown as: @Suspended Stage Value@.
-parseSuspended :: [ParsecT String u Identity t] -> ParsecT String u Identity t
-parseSuspended = parsecSuspended . toTryParsec where
+parseSuspended :: String -> [ParsecT String u Identity t] -> ParsecT String u Identity t
+parseSuspended namespace = parsecSuspended namespace . toTryParsec where
 
-  parsecSuspended :: ParsecT String u Identity t -> ParsecT String u Identity t
-  parsecSuspended p = string "Suspended" >> char ' ' >> p
+  parsecSuspended :: String -> ParsecT String u Identity t -> ParsecT String u Identity t
+  parsecSuspended namespace p = string (namespace ++ ".Suspended") >> char ' ' >> p
 
   toTryParsec :: [ParsecT String u Identity t] -> ParsecT String u Identity t
   toTryParsec (h:rest) = foldl1 (<|>) (map try rest) <|> h
