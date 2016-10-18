@@ -39,3 +39,7 @@ This flow is made of 2 (sub) flows:
 - Try at Home flow
   - Size flow
   - Checkout flow
+
+----
+
+To play with the Web server checkout `git checkout scotty` branch.
