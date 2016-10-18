@@ -1,4 +1,4 @@
-module Flow (main) where
+module Flow (main, receiveAnswer) where
 
 import qualified Size
 import qualified TryAtHome
@@ -6,6 +6,7 @@ import qualified Checkout
 import FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsQuestion(ask), IsState(step, state))
 
 import Control.Arrow (first)
+import Control.Monad (ap, join)
 import Text.Read (Read(readsPrec), readMaybe)
 import qualified System.IO as IO
 
@@ -13,7 +14,7 @@ import qualified System.IO as IO
 type Stack = [State]
 
 run :: Stack -> Answer -> IO Stack
-run [] _ = error "empty stack"
+run [] _ = sequence [state $ TryAtHome.Suspended TryAtHome.AskProduct ()] -- initial state
 run (s : ss) i = next s i >>= proceed ss
 
 proceed :: Stack -> Cont -> IO Stack
@@ -70,17 +71,16 @@ loopStack current@(h:_) = do
     Nothing -> putStrLn "parse error"
 
 
--- loopStackWORead :: Stack -> IO ()
--- loopStackWORead current = do
---   print "-- loopStackWORead"
---   let saved = serialize current
---   print saved
---   let next' = run current
---   i <- Answer <$> readLn
---   loopStackWORead $ next' i
-
-
--- Usage
+receiveAnswer :: String -> String -> IO (Maybe String, String)
+receiveAnswer saved i =
+  case (deserialize (read saved) :: Maybe [BiState (BiState Checkout.Suspended Size.Suspended) TryAtHome.Suspended]) of
+    Just loaded -> do
+      state <- join ((run <$> stack loaded) `ap` return (Answer i))
+      let serialized = show $ serialize state
+      case state of
+        []    -> return (Nothing, serialized)
+        (h:_) -> return (question h, serialized)
+    Nothing -> error "parse error"
 
 test' :: IO ()
 test' = do
