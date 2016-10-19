@@ -6,6 +6,8 @@ import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont,
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 import qualified Size
 import qualified Checkout
+import Text.Read (readMaybe)
+import Data.Maybe (fromMaybe)
 
 newtype Product = Product Int deriving (Read, Show)
 newtype Address = Address String deriving (Read, Show)
@@ -40,8 +42,8 @@ data Stage a where
 deriving instance Show (Stage a)
 
 
-getProduct :: s -> String -> (Product, s)
-getProduct s i = (Product $ read i, s)
+getProduct :: s -> Int -> (Product, s)
+getProduct s i = (Product i, s)
 
 getAddress :: s -> String -> (Address, s)
 getAddress s i = (Address i, s)
@@ -53,9 +55,10 @@ instance IsQuestion Suspended where
   ask (Suspended AskCheckout _) = Nothing
   ask (Suspended AskFinal    _) = Nothing
 
-
 instance IsState Suspended where
-  step (Suspended AskProduct s) (Answer i) = start (Suspended AskSize (getProduct s i)) (Size.Suspended Size.AskDoYou ())
+  step current@(Suspended AskProduct s) (Answer i) =
+    let f pid = start (Suspended AskSize (getProduct s pid)) (Size.Suspended Size.AskDoYou ())
+    in  fromMaybe (cont current) (f <$> readMaybe i)
   step (Suspended AskSize s) (Answer i) =
     let flowResult = read i :: Size.Suspended
     in case flowResult of

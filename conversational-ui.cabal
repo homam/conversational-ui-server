@@ -29,6 +29,8 @@ executable conversational-ui-exe
                      , scotty
                      , aeson
                      , text
+                     , transformers
+                     , http-types
   default-language:    Haskell2010
 
 test-suite conversational-ui-test
