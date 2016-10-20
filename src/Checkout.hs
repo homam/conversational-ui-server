@@ -2,7 +2,7 @@
 
 module Checkout (Suspended(Suspended), Stage(..), FinalResult) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end)
+import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, AnswerError(..), (?!))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 
 newtype BillingInfo = BillingInfo String deriving (Read, Show)
@@ -37,4 +37,4 @@ instance IsQuestion Suspended where
   ask (Suspended AskFinal       _) = Nothing
 
 instance IsState Suspended where
-  step (Suspended AskCheckoutBillingInfo s) (Answer i) = end $ Suspended AskFinal (BillingInfo i, s)
+  step (Suspended AskCheckoutBillingInfo s) (Answer i) = return $ end $ Suspended AskFinal (BillingInfo i, s)

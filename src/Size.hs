@@ -2,8 +2,11 @@
 
 module Size (Suspended(Suspended), SizeResult, Stage(AskDoYou, AskFinal), Size(..), Weight(..), Height(..)) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end)
+import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), AnswerError(..))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(readsPrecRP, readParsec))
+import Control.Monad.Trans (liftIO)
+import Data.Char (toLower)
+import Data.Foldable (find)
 
 newtype Size = Size Int deriving (Read, Show)
 newtype Height = Height Int deriving (Read, Show)
@@ -60,10 +63,14 @@ instance IsQuestion Suspended where
   ask (Suspended AskFinal  _) = Nothing
 
 instance IsState Suspended where
-  step (Suspended AskDoYou  s) (Answer i) =
-    -- if i `elem` ["y", "yes"]
-    cont $ if "y" == i then Suspended AskSize (True, s) else Suspended AskWeight (False, s)
-  step (Suspended AskWeight s) (Answer i) = cont $ Suspended AskHeight (getWeight s i)
-  step (Suspended AskHeight s) (Answer i) = end $ Suspended AskFinal (getHeight s i)
-  step (Suspended AskSize   s) (Answer i) = end $ Suspended AskFinal (getKnownSize s i)
+  step (Suspended AskDoYou  s) (Answer i) = do
+    let acceptables = [
+                       (["y", "yes"], Suspended AskSize (True, s)),
+                       (["n", "no"], Suspended AskWeight (False, s))
+                      ]
+        li = map toLower i
+    (cont . snd <$> find (elem li . fst) acceptables) ?! AnswerError "Please answer with yes or no."
+  step (Suspended AskWeight s) (Answer i) = return $ cont $ Suspended AskHeight (getWeight s i)
+  step (Suspended AskHeight s) (Answer i) = return $ end $ Suspended AskFinal (getHeight s i)
+  step (Suspended AskSize   s) (Answer i) = return $ end $ Suspended AskFinal (getKnownSize s i)
   step (Suspended AskFinal  _) _          = error "Flow already ended."

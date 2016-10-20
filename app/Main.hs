@@ -30,6 +30,9 @@ server = do
   S.post "/" $ do
       answer <- S.param "answer"
       stack  <- S.param "stack" `S.rescue` const (return "[]")
+      -- ei <- liftIO $ E.runExceptT $ Flow.runAnswered (Flow.receiveAnswer stack answer)
+      -- case ei of
+        -- Left (Flow.AnswerError (e, st)) -> undefined
       (question, stack') <- liftIO $ catch (Flow.receiveAnswer stack answer) handler
       S.json $ JSON.object [ "question" .= t (fromMaybe "" question), "stack" .= t stack' ]
       where

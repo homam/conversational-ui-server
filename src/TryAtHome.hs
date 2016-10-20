@@ -8,6 +8,8 @@ import qualified Size
 import qualified Checkout
 import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
+import qualified Control.Monad.Trans.Except as E
+
 
 newtype Product = Product Int deriving (Read, Show)
 newtype Address = Address String deriving (Read, Show)
@@ -56,22 +58,17 @@ instance IsQuestion Suspended where
   ask (Suspended AskFinal    _) = Nothing
 
 instance IsState Suspended where
-  step current@(Suspended AskProduct s) (Answer i) =
+  step (Suspended AskProduct s) (Answer i) =
     let f pid = start (Suspended AskSize (getProduct s pid)) (Size.Suspended Size.AskDoYou ())
-    -- in  fromMaybe (cont current) (f <$> readMaybe i)
-    in do
-    c <- state current
-    case readMaybe i ?! AnswerError ("ERROR", c) of
-      Left e -> return $ Left e
-      Right i -> f i
+    in f <$> readMaybe i ?! AnswerError "Please provide a number for product Id."
   step (Suspended AskSize s) (Answer i) =
     let flowResult = read i :: Size.Suspended
     in case flowResult of
-      Size.Suspended Size.AskFinal s' -> cont $ Suspended AskAddress (s', s)
+      Size.Suspended Size.AskFinal s' -> return $ cont $ Suspended AskAddress (s', s)
       _ -> error ("error: " ++ i ++ " is not of type Size.Suspended Size.AskFinal s")
-  step (Suspended AskAddress s) (Answer i) = start (Suspended AskCheckout (Address i, s)) (Checkout.Suspended Checkout.AskCheckoutBillingInfo ())
+  step (Suspended AskAddress s) (Answer i) = return $ start (Suspended AskCheckout (Address i, s)) (Checkout.Suspended Checkout.AskCheckoutBillingInfo ())
   step (Suspended AskCheckout s) (Answer i) =
     let flowResult = read i :: Checkout.Suspended
     in case flowResult of
-      Checkout.Suspended Checkout.AskFinal s' -> end $ Suspended AskFinal (s', s)
+      Checkout.Suspended Checkout.AskFinal s' -> return $ end $ Suspended AskFinal (s', s)
       _ -> error ("error: " ++ i ++ " is not of type Checkout.Suspended Checkout.FinalResult s")
