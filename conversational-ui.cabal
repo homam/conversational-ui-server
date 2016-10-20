@@ -18,6 +18,8 @@ library
   exposed-modules:     Flow, FlowCont, ParserUtil, TryAtHome, Size, Checkout
   build-depends:       base >= 4.7 && < 5
                      , parsec
+                     , mtl
+                     , transformers
   default-language:    Haskell2010
 
 executable conversational-ui-exe

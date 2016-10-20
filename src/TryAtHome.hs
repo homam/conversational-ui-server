@@ -2,7 +2,7 @@
 
 module TryAtHome (Stage(AskProduct, AskFinal), Suspended(Suspended)) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end)
+import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), state, AnswerError(..))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 import qualified Size
 import qualified Checkout
@@ -58,7 +58,12 @@ instance IsQuestion Suspended where
 instance IsState Suspended where
   step current@(Suspended AskProduct s) (Answer i) =
     let f pid = start (Suspended AskSize (getProduct s pid)) (Size.Suspended Size.AskDoYou ())
-    in  fromMaybe (cont current) (f <$> readMaybe i)
+    -- in  fromMaybe (cont current) (f <$> readMaybe i)
+    in do
+    c <- state current
+    case readMaybe i ?! AnswerError ("ERROR", c) of
+      Left e -> return $ Left e
+      Right i -> f i
   step (Suspended AskSize s) (Answer i) =
     let flowResult = read i :: Size.Suspended
     in case flowResult of

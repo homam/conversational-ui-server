@@ -60,7 +60,9 @@ instance IsQuestion Suspended where
   ask (Suspended AskFinal  _) = Nothing
 
 instance IsState Suspended where
-  step (Suspended AskDoYou  s) (Answer i) = cont $ if "y" == i then Suspended AskSize (True, s) else Suspended AskWeight (False, s)
+  step (Suspended AskDoYou  s) (Answer i) =
+    -- if i `elem` ["y", "yes"]
+    cont $ if "y" == i then Suspended AskSize (True, s) else Suspended AskWeight (False, s)
   step (Suspended AskWeight s) (Answer i) = cont $ Suspended AskHeight (getWeight s i)
   step (Suspended AskHeight s) (Answer i) = end $ Suspended AskFinal (getHeight s i)
   step (Suspended AskSize   s) (Answer i) = end $ Suspended AskFinal (getKnownSize s i)

@@ -3,7 +3,7 @@ module Flow (main, receiveAnswer) where
 import qualified Size
 import qualified TryAtHome
 import qualified Checkout
-import FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsQuestion(ask), IsState(step, state))
+import FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsQuestion(ask), IsState(step, state), AnswerError(..))
 
 import Control.Arrow (first)
 import Control.Monad (ap, join)
@@ -17,12 +17,16 @@ run :: Stack -> Answer -> IO Stack
 run [] _ = sequence [state $ TryAtHome.Suspended TryAtHome.AskProduct ()] -- initial state
 run (s : ss) i = next s i >>= proceed ss
 
-proceed :: Stack -> Cont -> IO Stack
-proceed rest (Cont s) = return $ s : rest
-proceed rest (Start s s') = return $ s' : s : rest
-proceed rest (End s) = case rest of
-  (h:t) -> next h (Answer $ show s) >>= proceed t
-  []    -> return []
+proceed :: Stack -> Either AnswerError Cont -> IO Stack
+
+proceed rest (Left (AnswerError (errorMessage, s))) = return $ s: rest
+proceed rest (Right c) = proceed' rest c where
+
+  proceed' rest (Cont s) = return $ s : rest
+  proceed' rest (Start s s') = return $ s' : s : rest
+  proceed' rest (End s) = case rest of
+    (h:t) -> next h (Answer $ show s) >>= proceed t
+    []    -> return []
 
 serialize :: Stack -> [String]
 serialize = map save
