@@ -2,14 +2,12 @@
 
 module TryAtHome (Stage(AskProduct, AskFinal), Suspended(Suspended)) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), state, AnswerError(..))
+import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), state, AnswerError(..), withMessage)
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 import qualified Size
 import qualified Checkout
 import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
-import qualified Control.Monad.Trans.Except as E
-
 
 newtype Product = Product Int deriving (Read, Show)
 newtype Address = Address String deriving (Read, Show)
@@ -59,7 +57,7 @@ instance IsQuestion Suspended where
 
 instance IsState Suspended where
   step (Suspended AskProduct s) (Answer i) =
-    let f pid = start (Suspended AskSize (getProduct s pid)) (Size.Suspended Size.AskDoYou ())
+    let f pid = start (Suspended AskSize (getProduct s pid)) (Size.Suspended Size.AskDoYou ()) `withMessage` "Product chosen."
     in f <$> readMaybe i ?! AnswerError "Please provide a number for product Id."
   step (Suspended AskSize s) (Answer i) =
     let flowResult = read i :: Size.Suspended
@@ -70,5 +68,6 @@ instance IsState Suspended where
   step (Suspended AskCheckout s) (Answer i) =
     let flowResult = read i :: Checkout.Suspended
     in case flowResult of
-      Checkout.Suspended Checkout.AskFinal s' -> return $ end $ Suspended AskFinal (s', s)
+      Checkout.Suspended Checkout.AskFinal s' -> return $
+        end (Suspended AskFinal (s', s)) `withMessage` "Tank you! You will reveive your item in 3 days."
       _ -> error ("error: " ++ i ++ " is not of type Checkout.Suspended Checkout.FinalResult s")

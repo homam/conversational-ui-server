@@ -1,30 +1,32 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeOperators, DeriveGeneric #-}
 
-module Flow (receiveAnswer, main) where
+module Flow (StepResult(..), receiveAnswer, main) where
 
 import qualified Size
 import qualified TryAtHome
 import qualified Checkout
-import FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsQuestion(ask), IsState(step, state), AnswerError(..), Answered, runAnswered)
+import FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsQuestion(ask), IsState(step, state), AnswerError(..), Answered, runAnswered, ContWithMessage(..))
 
 import Control.Arrow (first)
 import Text.Read (Read(readsPrec), readMaybe)
 import Data.Maybe (fromMaybe)
+import GHC.Generics (Generic)
 import qualified System.IO as IO
 
 -- | Stack is list of states
 type Stack = [State]
 
-run :: Stack -> Answer -> Answered Stack
-run [] _ = return [state $ TryAtHome.Suspended TryAtHome.AskProduct ()] -- initial state
-run (s : ss) i = next s i >>= proceed ss
+run :: Stack -> Answer -> Answered ([Maybe String], Stack)
+run [] _ = return ([], [state $ TryAtHome.Suspended TryAtHome.AskProduct ()]) -- initial state
+run (s : ss) i = first reverse <$> (proceed [] ss =<< next s i)
 
-proceed :: Stack -> Cont -> Answered Stack
-proceed rest (Cont s) = return $ s : rest
-proceed rest (Start s s') = return $ s' : s : rest
-proceed rest (End s) = case rest of
-  (h:t) -> next h (Answer $ show s) >>= proceed t
-  []    -> return []
+proceed :: [Maybe String] -> Stack -> ContWithMessage -> Answered ([Maybe String], Stack)
+proceed fs rest (ContWithMessage (Cont s) msg)     = return (msg : fs, s : rest)
+proceed fs rest (ContWithMessage (Start s s') msg) = return (msg : fs, s' : s : rest)
+proceed fs rest (ContWithMessage (End s) msg)      = case rest of
+  (h:t) -> next h (Answer $ show s) >>= proceed (msg : fs) t
+  []    -> return (msg : fs, [])
+
 
 serialize :: Stack -> [String]
 serialize = map save
@@ -73,19 +75,33 @@ loopStack current@(h:_) = do
       state <- runAnswered $ run beforeStack i
       case state of
         Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack beforeStack
-        Right stk -> loopStack stk
+        Right (msgs, stk) -> mapM_ (maybe (return ()) putStrLn) msgs >> loopStack stk
     Nothing -> putStrLn "parse error"
 
 
-receiveAnswer :: String -> String -> IO (Maybe String, String)
+data StepResult = StepResult {
+  stepQuestion :: Maybe String,
+  stepSerializedState :: String,
+  stepBadAnswerError :: Maybe String,
+  stepMessage :: [Maybe String]
+} deriving (Show, Generic)
+
+receiveAnswer :: String -> String -> IO StepResult -- (Maybe String, String)
 receiveAnswer saved i =
   case (deserialize (read saved) :: Maybe [Checkout.Suspended :|: Size.Suspended :|: TryAtHome.Suspended]) of
     Just loaded -> do
       let beforeStack = stack loaded
       state <- runAnswered $ run beforeStack (Answer i)
       return $ case state of
-        Left (AnswerError e) -> first ( \ s -> Just (e ++ fromMaybe "" (("\n" ++) <$> s)) ) (go beforeStack)
-        Right stk -> go stk
+        Left (AnswerError e) -> undefined -- first ( \ s -> Just (e ++ fromMaybe "" (("\n" ++) <$> s)) ) (go beforeStack)
+        Right (msg, stk) ->
+          let (q, s) = go stk
+          in StepResult {
+              stepQuestion = q,
+              stepSerializedState = s,
+              stepBadAnswerError = Nothing,
+              stepMessage = msg
+            }
     Nothing -> error $ "Cannot parse: " ++ saved
     where
       go :: Stack -> (Maybe String, String)

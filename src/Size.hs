@@ -2,7 +2,7 @@
 
 module Size (Suspended(Suspended), SizeResult, Stage(AskDoYou, AskFinal), Size(..), Weight(..), Height(..)) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), AnswerError(..))
+import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), AnswerError(..), ContWithMessage(..), withMessage)
 import ParserUtil (parseSuspended, parseStage, ReadParsec(readsPrecRP, readParsec))
 import Control.Monad.Trans (liftIO)
 import Data.Char (toLower)
@@ -72,5 +72,8 @@ instance IsState Suspended where
     (cont . snd <$> find (elem li . fst) acceptables) ?! AnswerError "Please answer with yes or no."
   step (Suspended AskWeight s) (Answer i) = return $ cont $ Suspended AskHeight (getWeight s i)
   step (Suspended AskHeight s) (Answer i) = return $ end $ Suspended AskFinal (getHeight s i)
-  step (Suspended AskSize   s) (Answer i) = return $ end $ Suspended AskFinal (getKnownSize s i)
+  step (Suspended AskSize   s) (Answer i) = do
+    let res = getKnownSize s i
+        msg = "Your size is " ++ show (size res)
+    return $ end (Suspended AskFinal res) `withMessage` msg
   step (Suspended AskFinal  _) _          = error "Flow already ended."
