@@ -1,12 +1,23 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveFunctor #-}
 
-module FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsState(..), IsQuestion(..), AnswerError(..), (?!), Answered, runAnswered, ContWithMessage(..), withMessage) where
+module FlowCont (Answer(..),
+  Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer,
+  (>-*), (<.>), State(..), IsState(..), IsQuestion(..),
+  AnswerError(..), throwAnswerError, Answered, runAnswered, ContWithMessage(..), withMessage) where
 
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Except (MonadError, throwError, runExceptT)
 import Control.Monad.IO.Class (MonadIO)
 
-newtype Answer = Answer { unAnswer :: String }
+import Text.Read (readMaybe)
+import Data.Maybe (fromMaybe)
+import Data.Foldable (find)
+import Data.Char (toLower)
+
+
+-- newtype Answer = Answer { unAnswer :: String }
+
+newtype Answer a = Answer { unAnswer :: a } deriving Functor
 
 newtype AnswerError = AnswerError String
 
@@ -32,23 +43,24 @@ newtype Answered c = Answered {
 runAnswered :: Answered c -> IO (Either AnswerError c)
 runAnswered = runExceptT . unAnswered
 
-(?!) :: Maybe a -> AnswerError -> Answered a -- E.ExceptT e m a
-Nothing ?! e = throwError e
-Just x  ?! _ = return x
-
-infixr 3 ?!
+throwAnswerError :: String -> Answered a
+throwAnswerError = throwError . AnswerError
 
 -- | Continue in the same flow
 cont :: IsState s => s -> ContWithMessage
-cont i = withoutMessage $ Cont $ state i
+cont = withoutMessage . Cont . state
 
 -- | Start a new flow (from inside the current flow)
 start :: (IsState s, IsState s') => s -> s' -> ContWithMessage
 start s s' = withoutMessage $ Start (state s) (state s')
 
+(>-*) :: (IsState s, IsState s') => Answered s -> s' -> Answered ContWithMessage
+ms >-* s' = flip start s'<$> ms
+infixr 5 >-*
+
 -- | End the current flow
 end :: IsState s => s -> ContWithMessage
-end s = withoutMessage $ End (state s)
+end = withoutMessage . End . state
 
 -- | Whether the state is a Question
 class IsQuestion s where
@@ -56,7 +68,7 @@ class IsQuestion s where
 
 -- | State is something, which has the next action, a string representation and maybe a question
 data State = State {
-  next :: Answer -> Answered ContWithMessage,
+  next :: Answer String -> Answered ContWithMessage,
   question :: Maybe String,
   save :: String
 }
@@ -65,7 +77,7 @@ data State = State {
 class (Read s, Show s, IsQuestion s) => IsState s where
 
   -- | Specifies how to proceed given the current state 's' and an `Answer`
-  step :: s -> Answer -> Answered ContWithMessage
+  step :: s -> Answer String -> Answered ContWithMessage
 
   state :: s -> State
   state x = State {
@@ -76,3 +88,37 @@ class (Read s, Show s, IsQuestion s) => IsState s where
 
 instance Show State where
   show = save
+
+
+-- answer processing helper functions
+
+validateAnswer :: (String -> Either String b) -> (b -> Answered a) -> Answer String -> Answered a
+validateAnswer validator cwm (Answer i) = either
+  throwAnswerError
+  cwm
+  (validator i)
+
+readAnswer :: Read b => String -> (b -> Answered a) -> Answer String -> Answered a
+readAnswer errMsg cwm (Answer i) = maybe
+  (throwAnswerError errMsg)
+  cwm
+  (readMaybe i)
+
+intAnswer :: (Int -> Answered a) -> Answer String -> Answered a
+intAnswer = readAnswer "Please provide a number."
+
+selectAnswer :: String -> [([String], Answered a)] -> Answer String -> Answered a
+selectAnswer errMsg acceptables (Answer i) = fromMaybe
+  (throwAnswerError errMsg)
+  (snd <$> find (elem i . fst) acceptables)
+
+yesNoAnswer :: Answered a -> Answered a -> Answer String -> Answered a
+yesNoAnswer yesAns noAns ans = selectAnswer
+  "Please answer with either yes or no."
+  [(["y", "yes"], yesAns), (["n", "no"], noAns)]
+  (map toLower <$> ans)
+
+
+(<.>) :: Functor f => (a -> b) -> (c -> f a) -> c -> f b
+f1 <.> f2 = fmap f1 . f2
+infixr 9 <.>

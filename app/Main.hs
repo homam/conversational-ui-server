@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, DeriveGeneric, StandaloneDeriving #-}
 
 module Main where
 
@@ -6,10 +6,11 @@ import qualified Flow
 
 import qualified Web.Scotty as S
 import qualified Web.Scotty.Trans as ST
-import Network.HTTP.Types (status404)
+import Network.HTTP.Types (status502)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (toJSON, (.=))
 import qualified Data.Aeson as JSON
+import GHC.Generics (Generic)
 import Data.Aeson.Types
 import Data.Text (Text)
 import Data.String (fromString)
@@ -18,13 +19,15 @@ import Control.Exception.Base (catch, evaluate, SomeException)
 import qualified Data.Text.Internal.Lazy as LT
 import Debug.Trace (trace)
 
-t s = fromString s :: Text
-
-defaultHandler :: LT.Text -> ST.ActionT LT.Text IO ()
-defaultHandler _ = S.status status404
+deriving instance Generic Flow.StepResult
 
 instance JSON.ToJSON Flow.StepResult where
   toJSON = JSON.genericToJSON (JSON.defaultOptions { omitNothingFields = True })
+
+t s = fromString s :: Text
+
+defaultHandler :: LT.Text -> ST.ActionT LT.Text IO ()
+defaultHandler x = S.status status502 >> S.text x
 
 server :: S.ScottyM ()
 server = do
@@ -34,14 +37,12 @@ server = do
   S.post "/" $ do
       answer <- S.param "answer"
       stack  <- S.param "stack" `S.rescue` const (return "[]")
-      res <- liftIO (Flow.receiveAnswer stack answer)
-      S.json res
+      res <- liftIO $ catch (Right <$> Flow.receiveAnswer stack answer) handler
+      either (S.raise . fromString) S.json res
 
-      -- (question, stack') <- liftIO $ catch (Flow.receiveAnswer stack answer) handler
-      -- S.json $ JSON.object [ "question" .= t (fromMaybe "" question), "stack" .= t stack' ]
-      -- where
-      --   handler :: SomeException -> IO (Maybe String, String)
-      --   handler x = trace (show x) $ return (Nothing, "ERROR")
+      where
+        handler :: SomeException -> IO (Either String Flow.StepResult)
+        handler = return . Left . show
 
 main :: IO ()
 -- main = Flow.main

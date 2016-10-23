@@ -2,11 +2,10 @@
 
 module Size (Suspended(Suspended), SizeResult, Stage(AskDoYou, AskFinal), Size(..), Weight(..), Height(..)) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), AnswerError(..), ContWithMessage(..), withMessage)
+import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..),
+  cont, end, yesNoAnswer, intAnswer, withMessage)
 import ParserUtil (parseSuspended, parseStage, ReadParsec(readsPrecRP, readParsec))
-import Control.Monad.Trans (liftIO)
-import Data.Char (toLower)
-import Data.Foldable (find)
+import Text.Read (Read(readsPrec))
 
 newtype Size = Size Int deriving (Read, Show)
 newtype Height = Height Int deriving (Read, Show)
@@ -46,14 +45,14 @@ instance ReadParsec Suspended where
     where
       read' name = parseStage name . Suspended
 
-getKnownSize :: (Bool, s) -> String -> SizeResult
-getKnownSize (b, _) i = SizeResult { size = Size $ read i, knownSize = b}
+getKnownSize :: (Bool, s) -> Int -> SizeResult
+getKnownSize (b, _) i = SizeResult { size = Size i, knownSize = b}
 
-getWeight :: s -> String -> (Weight, s)
-getWeight s i = (Weight $ read i, s)
+getWeight :: s -> Int -> (Weight, s)
+getWeight s i = (Weight i, s)
 
-getHeight :: (Weight, (Bool, s)) -> String -> SizeResult
-getHeight (Weight w, (b, _)) i = SizeResult { size = Size $ w * read i, knownSize = b }
+getHeight :: (Weight, (Bool, s)) -> Int -> SizeResult
+getHeight (Weight w, (b, _)) i = SizeResult { size = Size $ w * i, knownSize = b }
 
 instance IsQuestion Suspended where
   ask (Suspended AskDoYou  _) = Just "Do you know your size?"
@@ -63,17 +62,20 @@ instance IsQuestion Suspended where
   ask (Suspended AskFinal  _) = Nothing
 
 instance IsState Suspended where
-  step (Suspended AskDoYou  s) (Answer i) = do
-    let acceptables = [
-                       (["y", "yes"], Suspended AskSize (True, s)),
-                       (["n", "no"], Suspended AskWeight (False, s))
-                      ]
-        li = map toLower i
-    (cont . snd <$> find (elem li . fst) acceptables) ?! AnswerError "Please answer with yes or no."
-  step (Suspended AskWeight s) (Answer i) = return $ cont $ Suspended AskHeight (getWeight s i)
-  step (Suspended AskHeight s) (Answer i) = return $ end $ Suspended AskFinal (getHeight s i)
-  step (Suspended AskSize   s) (Answer i) = do
-    let res = getKnownSize s i
-        msg = "Your size is " ++ show (size res)
-    return $ end (Suspended AskFinal res) `withMessage` msg
-  step (Suspended AskFinal  _) _          = error "Flow already ended."
+  step (Suspended AskDoYou s) = yesNoAnswer
+    (return $ cont $ Suspended AskSize (True, s))
+    (return $ cont $ Suspended AskWeight (False, s))
+
+  step (Suspended AskWeight s) = intAnswer
+    (return . cont . Suspended AskHeight . getWeight s)
+
+  step (Suspended AskHeight s) = intAnswer
+    (\ i ->
+      let size = getHeight s i
+      in  return $ end (Suspended AskFinal size) `withMessage` ("Your size is " ++ show size)
+    )
+
+  step (Suspended AskSize s) = intAnswer
+    (return . end . Suspended AskFinal . getKnownSize s)
+
+  step (Suspended AskFinal  _) = const $ error "Flow already ended."

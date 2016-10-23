@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeOperators, DeriveGeneric #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Flow (StepResult(..), receiveAnswer, main) where
 
@@ -9,14 +9,13 @@ import FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsQuestion(a
 
 import Control.Arrow (first)
 import Text.Read (Read(readsPrec), readMaybe)
-import Data.Maybe (fromMaybe)
-import GHC.Generics (Generic)
+import Data.Maybe (fromMaybe, isJust)
 import qualified System.IO as IO
 
 -- | Stack is list of states
 type Stack = [State]
 
-run :: Stack -> Answer -> Answered ([Maybe String], Stack)
+run :: Stack -> Answer String -> Answered ([Maybe String], Stack)
 run [] _ = return ([], [state $ TryAtHome.Suspended TryAtHome.AskProduct ()]) -- initial state
 run (s : ss) i = first reverse <$> (proceed [] ss =<< next s i)
 
@@ -83,24 +82,31 @@ data StepResult = StepResult {
   stepQuestion :: Maybe String,
   stepSerializedState :: String,
   stepBadAnswerError :: Maybe String,
-  stepMessage :: [Maybe String]
-} deriving (Show, Generic)
+  stepMessage :: [String]
+} deriving (Show)
 
-receiveAnswer :: String -> String -> IO StepResult -- (Maybe String, String)
+receiveAnswer :: String -> String -> IO StepResult
 receiveAnswer saved i =
   case (deserialize (read saved) :: Maybe [Checkout.Suspended :|: Size.Suspended :|: TryAtHome.Suspended]) of
     Just loaded -> do
       let beforeStack = stack loaded
       state <- runAnswered $ run beforeStack (Answer i)
       return $ case state of
-        Left (AnswerError e) -> undefined -- first ( \ s -> Just (e ++ fromMaybe "" (("\n" ++) <$> s)) ) (go beforeStack)
+        Left (AnswerError e) ->
+          let (q, s) = go beforeStack
+          in StepResult {
+              stepQuestion = q,
+              stepSerializedState = s,
+              stepBadAnswerError = Just e,
+              stepMessage = []
+            }
         Right (msg, stk) ->
           let (q, s) = go stk
           in StepResult {
               stepQuestion = q,
               stepSerializedState = s,
               stepBadAnswerError = Nothing,
-              stepMessage = msg
+              stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] msg
             }
     Nothing -> error $ "Cannot parse: " ++ saved
     where

@@ -1,13 +1,14 @@
-{-# LANGUAGE GADTs, StandaloneDeriving #-}
+{-# LANGUAGE GADTs, StandaloneDeriving, TupleSections #-}
 
 module TryAtHome (Stage(AskProduct, AskFinal), Suspended(Suspended)) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..), start, cont, end, (?!), state, AnswerError(..), withMessage)
+import FlowCont (Answer(..), IsQuestion(..), IsState(..),
+  start, cont, end, intAnswer, withMessage, (>-*),
+  (<.>))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 import qualified Size
 import qualified Checkout
-import Text.Read (readMaybe)
-import Data.Maybe (fromMaybe)
+import Control.Monad.IO.Class (liftIO)
 
 newtype Product = Product Int deriving (Read, Show)
 newtype Address = Address String deriving (Read, Show)
@@ -42,8 +43,8 @@ data Stage a where
 deriving instance Show (Stage a)
 
 
-getProduct :: s -> Int -> (Product, s)
-getProduct s i = (Product i, s)
+fetchProduct :: Int -> IO Product
+fetchProduct = return . Product
 
 getAddress :: s -> String -> (Address, s)
 getAddress s i = (Address i, s)
@@ -56,15 +57,15 @@ instance IsQuestion Suspended where
   ask (Suspended AskFinal    _) = Nothing
 
 instance IsState Suspended where
-  step (Suspended AskProduct s) (Answer i) =
-    let f pid = start (Suspended AskSize (getProduct s pid)) (Size.Suspended Size.AskDoYou ()) `withMessage` "Product chosen."
-    in f <$> readMaybe i ?! AnswerError "Please provide a number for product Id."
+  step (Suspended AskProduct s) ans =
+    let f pid = liftIO (fmap (Suspended AskSize . (, s)) (fetchProduct pid)) >-* Size.Suspended Size.AskDoYou ()
+    in intAnswer (flip withMessage "Thank you for choosing this product. Now select your size." <.> f) ans
   step (Suspended AskSize s) (Answer i) =
     let flowResult = read i :: Size.Suspended
     in case flowResult of
       Size.Suspended Size.AskFinal s' -> return $ cont $ Suspended AskAddress (s', s)
       _ -> error ("error: " ++ i ++ " is not of type Size.Suspended Size.AskFinal s")
-  step (Suspended AskAddress s) (Answer i) = return $ start (Suspended AskCheckout (Address i, s)) (Checkout.Suspended Checkout.AskCheckoutBillingInfo ())
+  step (Suspended AskAddress s) (Answer i) = return (Suspended AskCheckout (Address i, s)) >-* Checkout.Suspended Checkout.AskBillingInfo ()
   step (Suspended AskCheckout s) (Answer i) =
     let flowResult = read i :: Checkout.Suspended
     in case flowResult of
