@@ -14,8 +14,7 @@ import GHC.Generics (Generic)
 import Data.Aeson.Types
 import Data.Text (Text)
 import Data.String (fromString)
-import Data.Maybe (fromMaybe)
-import Control.Exception.Base (catch, evaluate, SomeException)
+import Control.Exception.Base (catch, SomeException)
 import qualified Data.Text.Internal.Lazy as LT
 import Debug.Trace (trace)
 
@@ -27,7 +26,9 @@ instance JSON.ToJSON Flow.StepResult where
 t s = fromString s :: Text
 
 defaultHandler :: LT.Text -> ST.ActionT LT.Text IO ()
-defaultHandler x = S.status status502 >> S.text x
+defaultHandler x = do
+  S.status status502
+  S.json $ JSON.object [ "exception" .= x ]
 
 server :: S.ScottyM ()
 server = do
