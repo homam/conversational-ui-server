@@ -1,11 +1,12 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TupleSections #-}
 
 module Flow (StepResult(..), receiveAnswer, main) where
 
-import qualified Size
-import qualified TryAtHome
-import qualified Checkout
-import FlowCont (Answer(..), Cont(..), State(..), IsQuestion(ask), IsState(step, state),
+import qualified Flows.Size as Size
+import qualified Flows.TryAtHome as TryAtHome
+import qualified Flows.Checkout as Checkout
+import FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
+  Answer(..), Cont(..), State(..), IsQuestion(ask), IsState(step, state),
   AnswerError(..), Answered, runAnswered, ContWithMessage(..))
 
 import Control.Arrow (first)
@@ -13,11 +14,9 @@ import Text.Read (Read(readsPrec), readMaybe)
 import Data.Maybe (fromMaybe, isJust)
 import qualified System.IO as IO
 
--- | Stack is list of states
-type Stack = [State]
 
 run :: Stack -> Answer String -> Answered ([Maybe String], Stack)
-run [] _ = return ([], [state $ TryAtHome.Suspended TryAtHome.AskProduct ()]) -- initial state
+run [] _ = return ([], []) -- initial state
 run (s : ss) i = first reverse <$> (proceed [] ss =<< next s i)
 
 proceed :: [Maybe String] -> Stack -> ContWithMessage -> Answered ([Maybe String], Stack)
@@ -28,40 +27,6 @@ proceed fs rest (ContWithMessage (End s) msg)      = case rest of
   []    -> return (msg : fs, [])
 
 
-serialize :: Stack -> [String]
-serialize = map save
-
--- | Here we have to provide some type in order to know, which
--- read functions to use
-deserialize :: IsState s => [String] -> Maybe [s]
-deserialize = mapM readMaybe
-
-
--- | Convert actual data to stack
-stack :: IsState s => [s] -> Stack
-stack = map state
-
--- | Union of states, to specify type of 'deserialize'
-data l :|: r = LState l | RState r
-
-infixr 5 :|:
-
-instance (Read l, Read r, Show l, Show r) => Read (l :|: r) where
-  readsPrec p s = map (first LState) (readsPrec p s) ++ map (first RState) (readsPrec p s)
-
-instance (Show l, Show r) => Show (l :|: r) where
-  show (LState x) = show x
-  show (RState x) = show x
-
-instance (IsQuestion l, IsQuestion r) => IsQuestion (l :|: r) where
-  ask (LState x) = ask x
-  ask (RState x) = ask x
-
-instance (IsState l, IsState r) => IsState (l :|: r) where
-  step (LState x) = step x
-  step (RState x) = step x
-
-
 data StepResult = StepResult {
   stepQuestion :: Maybe String,
   stepSerializedState :: String,
@@ -69,64 +34,70 @@ data StepResult = StepResult {
   stepMessage :: [String]
 } deriving (Show)
 
+receiveAnswer = receiveAnswer' (TryAtHome.Suspended TryAtHome.AskProduct ())
+
 -- | Process the current state and the input from the user.
 -- We either return the current step with an error message if input validation fails
 -- or move forward to the next step.
-receiveAnswer :: String -> String -> IO StepResult
-receiveAnswer saved i =
-  case (deserialize (read saved) :: Maybe [Checkout.Suspended :|: Size.Suspended :|: TryAtHome.Suspended]) of
-    Just loaded -> do
-      let beforeStack = stack loaded
-      state <- runAnswered $ run beforeStack (Answer i)
-      return $ case state of
-        -- validatoin failed
-        Left (AnswerError e) ->
-          let (q, s) = go beforeStack
-          in StepResult {
-              stepQuestion = q,
-              stepSerializedState = s,
-              stepBadAnswerError = Just e,
-              stepMessage = []
-            }
-        -- move forward in the graph
-        Right (msg, stk) ->
-          let (q, s) = go stk
-          in StepResult {
-              stepQuestion = q,
-              stepSerializedState = s,
-              stepBadAnswerError = Nothing,
-              stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] msg
-            }
+receiveAnswer' :: IsFlow s s' => s -> String -> String -> IO StepResult
+receiveAnswer' sflow saved i =
+  case deseralizeFlow sflow (read saved) of
+    Just loaded -> processAnswer sflow loaded i
     Nothing -> error $ "Cannot parse: " ++ saved
-    where
-      go :: Stack -> (Maybe String, String)
-      go stk =
-        let serialized = show $ serialize stk in
-        case stk of
-          []    -> (Nothing, serialized)
-          (h:_) -> (question h, serialized)
 
+processAnswer :: (IsState s, IsState s') => s' -> [s] -> String -> IO StepResult
+processAnswer initState loaded i = do
+  let beforeStack = stack loaded
+  state <- runAnswered $ case beforeStack of
+    (_:_) -> run beforeStack (Answer i)
+    _ -> return ([], [state initState])
+  return $ case state of
+    -- validatoin failed
+    Left (AnswerError e) ->
+      let (q, s) = go beforeStack
+      in StepResult {
+          stepQuestion = q,
+          stepSerializedState = s,
+          stepBadAnswerError = Just e,
+          stepMessage = []
+        }
+    -- move forward in the graph
+    Right (msg, stk) ->
+      let (q, s) = go stk
+      in StepResult {
+          stepQuestion = q,
+          stepSerializedState = s,
+          stepBadAnswerError = Nothing,
+          stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] msg
+        }
+  where
+    go :: Stack -> (Maybe String, String)
+    go stk =
+      let serialized = show $ serialize stk in
+      case stk of
+        []    -> (Nothing, serialized)
+        (h:_) -> (question h, serialized)
 
 -- | For testing in GHCi
-loopStack :: Stack -> IO ()
-loopStack [] = putStrLn "Fin"
-loopStack current@(h:_) = do
+loopStack :: IsFlow s s' => s -> Stack -> IO ()
+loopStack _ [] = putStrLn "Fin"
+loopStack sflow current@(h:_) = do
   maybe (return ()) (putStrLn . (">> " ++)) (question h)
   let saved = serialize current
   putStrLn $ "saved = " ++ show saved
-  case (deserialize saved :: Maybe [Checkout.Suspended :|: Size.Suspended :|: TryAtHome.Suspended]) of
+  case deseralizeFlow sflow saved of
     Just loaded -> do
       let beforeStack = stack loaded
       i <- Answer <$> readLn
       state <- runAnswered $ run beforeStack i
       case state of
-        Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack beforeStack
-        Right (msgs, stk) -> mapM_ (maybe (return ()) putStrLn) msgs >> loopStack stk
+        Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack sflow beforeStack
+        Right (msgs, stk) -> mapM_ (maybe (return ()) (putStrLn . (":: " ++))) msgs >> loopStack sflow stk
     Nothing -> putStrLn "parse error"
 
 
 -- for testing in GHCi
 main = do
   IO.hSetBuffering IO.stdin IO.LineBuffering
-  let start = [state $ TryAtHome.Suspended TryAtHome.AskProduct ()]
-  loopStack start
+  let start = TryAtHome.Suspended TryAtHome.AskProduct ()
+  loopStack start [state start]

@@ -1,6 +1,6 @@
 {-# LANGUAGE GADTs, StandaloneDeriving #-}
 
-module Checkout (Suspended(Suspended), Stage(..), FinalResult) where
+module Flows.Checkout (Suspended(Suspended), Stage(..), FinalResult) where
 
 import FlowCont (Answer(..), IsQuestion(..), IsState(..),
   cont, end, withMessage)

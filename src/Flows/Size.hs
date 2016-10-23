@@ -1,9 +1,11 @@
-{-# LANGUAGE GADTs, StandaloneDeriving #-}
+{-# LANGUAGE GADTs, StandaloneDeriving
+  , FlexibleInstances, MultiParamTypeClasses #-}
 
-module Size (Suspended(Suspended), SizeResult, Stage(AskDoYou, AskFinal), Size(..), Weight(..), Height(..)) where
+module Flows.Size (Suspended(Suspended), SizeResult, Stage(AskDoYou, AskFinal), Size(..), Weight(..), Height(..)) where
 
 import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..),
-  cont, end, yesNoAnswer, intAnswer, withMessage)
+  cont, end, yesNoAnswer, intAnswer, withMessage,
+  IsFlow(..), deserialize)
 import ParserUtil (parseSuspended, parseStage, ReadParsec(readsPrecRP, readParsec))
 import Text.Read (Read(readsPrec))
 
@@ -24,6 +26,9 @@ data Stage a where
   AskFinal  :: Stage SizeResult
 
 deriving instance Show (Stage a)
+
+instance IsFlow Suspended Suspended where
+  deseralizeFlow (Suspended _ _) = deserialize
 
 data Suspended where
   Suspended :: Show as => Stage as -> as -> Suspended

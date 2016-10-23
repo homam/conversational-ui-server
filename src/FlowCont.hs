@@ -1,6 +1,7 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveFunctor #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveFunctor, FunctionalDependencies #-}
 
-module FlowCont (Answer(..),
+module FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
+  Answer(..),
   Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer,
   (>-*), State(..), IsState(..), IsQuestion(..),
   AnswerError(..), throwAnswerError, Answered, runAnswered, ContWithMessage(..), withMessage) where
@@ -13,9 +14,6 @@ import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
 import Data.Foldable (find)
 import Data.Char (toLower)
-
-
--- newtype Answer = Answer { unAnswer :: String }
 
 newtype Answer a = Answer { unAnswer :: a } deriving Functor
 
@@ -73,6 +71,23 @@ data State = State {
   save :: String
 }
 
+-- | Stack is list of states
+type Stack = [State]
+
+serialize :: Stack -> [String]
+serialize = map save
+
+-- | Here we have to provide some type in order to know, which
+-- read functions to use
+deserialize :: IsState s => [String] -> Maybe [s]
+deserialize = mapM readMaybe
+
+-- | Convert actual data to stack
+stack :: IsState s => [s] -> Stack
+stack = map state
+
+class (IsState s, IsState s') => IsFlow s s' | s -> s' where
+  deseralizeFlow :: s -> [String] -> Maybe [s']
 
 class (Read s, Show s, IsQuestion s) => IsState s where
 

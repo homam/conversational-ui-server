@@ -1,13 +1,16 @@
-{-# LANGUAGE GADTs, StandaloneDeriving, TupleSections #-}
+{-# LANGUAGE GADTs, StandaloneDeriving, TupleSections
+  , FlexibleInstances, MultiParamTypeClasses, TypeOperators #-}
 
-module TryAtHome (Stage(AskProduct, AskFinal), Suspended(Suspended)) where
+module Flows.TryAtHome (Stage(AskProduct, AskFinal), Suspended(Suspended)) where
 
 import FlowCont (Answer(..), IsQuestion(..), IsState(..),
-  start, cont, end, intAnswer, withMessage, (>-*))
+  start, cont, end, intAnswer, withMessage, (>-*),
+  IsFlow(..), deserialize)
+import BiState ((:|:))
 import Control.Applicative.Utils ((<.>))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
-import qualified Size
-import qualified Checkout
+import qualified Flows.Size as Size
+import qualified Flows.Checkout as Checkout
 import Control.Monad.IO.Class (liftIO)
 
 newtype Product = Product Int deriving (Read, Show)
@@ -31,7 +34,7 @@ instance ReadParsec Suspended where
       , read' "AskFinal"    AskFinal
     ]
     where
-      read' name = parseStage name  . Suspended
+      read' name = parseStage name . Suspended
 
 data Stage a where
   AskProduct  :: Stage ()
@@ -42,6 +45,8 @@ data Stage a where
 
 deriving instance Show (Stage a)
 
+instance IsFlow Suspended (Checkout.Suspended :|: Size.Suspended :|: Suspended) where
+  deseralizeFlow (Suspended _ _) = deserialize
 
 fetchProduct :: Int -> IO Product
 fetchProduct = return . Product
