@@ -8,11 +8,11 @@ import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 
 newtype BillingInfo = BillingInfo String deriving (Read, Show)
 
-type FinalResult = (BillingInfo, ())
+type FinalResult = BillingInfo
 
 data Stage a where
   AskBillingInfo :: Stage ()
-  AskFinal       :: Stage (BillingInfo, ())
+  AskFinal       :: Stage FinalResult
 
 deriving instance Show (Stage a)
 
@@ -39,4 +39,4 @@ instance IsQuestion Suspended where
 
 instance IsState Suspended where
   step (Suspended AskBillingInfo s) (Answer i) = return $
-    end (Suspended AskFinal (BillingInfo i, s)) `withMessage` "Your billing info saved."
+    end (Suspended AskFinal $ BillingInfo i) `withMessage` "Your billing info saved."
