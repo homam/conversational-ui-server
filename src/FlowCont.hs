@@ -2,7 +2,7 @@
 
 module FlowCont (Answer(..),
   Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer,
-  (>-*), (<.>), State(..), IsState(..), IsQuestion(..),
+  (>-*), State(..), IsState(..), IsQuestion(..),
   AnswerError(..), throwAnswerError, Answered, runAnswered, ContWithMessage(..), withMessage) where
 
 import Control.Monad.Trans.Except (ExceptT)
@@ -117,8 +117,3 @@ yesNoAnswer yesAns noAns ans = selectAnswer
   "Please answer with either yes or no."
   [(["y", "yes"], yesAns), (["n", "no"], noAns)]
   (map toLower <$> ans)
-
-
-(<.>) :: Functor f => (a -> b) -> (c -> f a) -> c -> f b
-f1 <.> f2 = fmap f1 . f2
-infixr 9 <.>

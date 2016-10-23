@@ -3,8 +3,8 @@
 module TryAtHome (Stage(AskProduct, AskFinal), Suspended(Suspended)) where
 
 import FlowCont (Answer(..), IsQuestion(..), IsState(..),
-  start, cont, end, intAnswer, withMessage, (>-*),
-  (<.>))
+  start, cont, end, intAnswer, withMessage, (>-*))
+import Control.Applicative.Utils ((<.>))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 import qualified Size
 import qualified Checkout
