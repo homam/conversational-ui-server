@@ -5,7 +5,8 @@ module Flow (StepResult(..), receiveAnswer, main) where
 import qualified Size
 import qualified TryAtHome
 import qualified Checkout
-import FlowCont (Answer(..), Cont(..), cont, start, end, State(..), IsQuestion(ask), IsState(step, state), AnswerError(..), Answered, runAnswered, ContWithMessage(..))
+import FlowCont (Answer(..), Cont(..), State(..), IsQuestion(ask), IsState(step, state),
+  AnswerError(..), Answered, runAnswered, ContWithMessage(..))
 
 import Control.Arrow (first)
 import Text.Read (Read(readsPrec), readMaybe)
@@ -61,23 +62,6 @@ instance (IsState l, IsState r) => IsState (l :|: r) where
   step (RState x) = step x
 
 
-loopStack :: Stack -> IO ()
-loopStack [] = putStrLn "Fin"
-loopStack current@(h:_) = do
-  maybe (return ()) (putStrLn . (">> " ++)) (question h)
-  let saved = serialize current
-  putStrLn $ "saved = " ++ show saved
-  case (deserialize saved :: Maybe [Checkout.Suspended :|: Size.Suspended :|: TryAtHome.Suspended]) of
-    Just loaded -> do
-      let beforeStack = stack loaded
-      i <- Answer <$> readLn
-      state <- runAnswered $ run beforeStack i
-      case state of
-        Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack beforeStack
-        Right (msgs, stk) -> mapM_ (maybe (return ()) putStrLn) msgs >> loopStack stk
-    Nothing -> putStrLn "parse error"
-
-
 data StepResult = StepResult {
   stepQuestion :: Maybe String,
   stepSerializedState :: String,
@@ -85,6 +69,9 @@ data StepResult = StepResult {
   stepMessage :: [String]
 } deriving (Show)
 
+-- | Process the current state and the input from the user.
+-- We either return the current step with an error message if input validation fails
+-- or move forward to the next step.
 receiveAnswer :: String -> String -> IO StepResult
 receiveAnswer saved i =
   case (deserialize (read saved) :: Maybe [Checkout.Suspended :|: Size.Suspended :|: TryAtHome.Suspended]) of
@@ -92,6 +79,7 @@ receiveAnswer saved i =
       let beforeStack = stack loaded
       state <- runAnswered $ run beforeStack (Answer i)
       return $ case state of
+        -- validatoin failed
         Left (AnswerError e) ->
           let (q, s) = go beforeStack
           in StepResult {
@@ -100,6 +88,7 @@ receiveAnswer saved i =
               stepBadAnswerError = Just e,
               stepMessage = []
             }
+        -- move forward in the graph
         Right (msg, stk) ->
           let (q, s) = go stk
           in StepResult {
@@ -118,6 +107,25 @@ receiveAnswer saved i =
           (h:_) -> (question h, serialized)
 
 
+-- | For testing in GHCi
+loopStack :: Stack -> IO ()
+loopStack [] = putStrLn "Fin"
+loopStack current@(h:_) = do
+  maybe (return ()) (putStrLn . (">> " ++)) (question h)
+  let saved = serialize current
+  putStrLn $ "saved = " ++ show saved
+  case (deserialize saved :: Maybe [Checkout.Suspended :|: Size.Suspended :|: TryAtHome.Suspended]) of
+    Just loaded -> do
+      let beforeStack = stack loaded
+      i <- Answer <$> readLn
+      state <- runAnswered $ run beforeStack i
+      case state of
+        Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack beforeStack
+        Right (msgs, stk) -> mapM_ (maybe (return ()) putStrLn) msgs >> loopStack stk
+    Nothing -> putStrLn "parse error"
+
+
+-- for testing in GHCi
 main = do
   IO.hSetBuffering IO.stdin IO.LineBuffering
   let start = [state $ TryAtHome.Suspended TryAtHome.AskProduct ()]
