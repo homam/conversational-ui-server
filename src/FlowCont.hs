@@ -15,13 +15,16 @@ import Data.Maybe (fromMaybe)
 import Data.Foldable (find)
 import Data.Char (toLower)
 
+-- | Answer from user
 newtype Answer a = Answer { unAnswer :: a } deriving Functor
 
-newtype AnswerError = AnswerError String
-
--- | Action operates on 'State'
+-- | Each step in the flow can continue with either a
+-- @Cont newState@: to update the state of the flow continue the flow to a new step
+-- @Start currentState initState@: to start a new (sub-) flow
+-- @End finalState@: to end the current flow (or sub flow).
 data Cont = Cont State | Start State State | End State deriving (Show)
 
+-- | Each step of the flow returns an optional message along with continuation instruction
 data ContWithMessage = ContWithMessage {
   contWith :: Cont,
   contMessage :: Maybe String
@@ -32,6 +35,9 @@ withoutMessage c = ContWithMessage c Nothing
 
 withMessage :: ContWithMessage -> String -> ContWithMessage
 ContWithMessage c _ `withMessage` s = ContWithMessage c (Just s)
+
+-- | Answer processing error
+newtype AnswerError = AnswerError String
 
 -- Answer -> IO (Either AnswerError c)
 newtype Answered c = Answered {
@@ -52,6 +58,7 @@ cont = withoutMessage . Cont . state
 start :: (IsState s, IsState s') => s -> s' -> ContWithMessage
 start s s' = withoutMessage $ Start (state s) (state s')
 
+-- | Save the latest result @ms@ in the Stack and fork a new flow.
 (>-*) :: (IsState s, IsState s') => Answered s -> s' -> Answered ContWithMessage
 ms >-* s' = flip start s'<$> ms
 infixr 5 >-*
@@ -86,6 +93,8 @@ deserialize = mapM readMaybe
 stack :: IsState s => [s] -> Stack
 stack = map state
 
+-- | A main flow. First type param @s@ is the suspended type of the flow and the second
+-- type param @s'@ is the union of suspended types of every sub-flow that this flow depends on (using 'BiState')
 class (IsState s, IsState s') => IsFlow s s' | s -> s' where
   deseralizeFlow :: s -> [String] -> Maybe [s']
 
