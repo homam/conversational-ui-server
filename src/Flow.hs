@@ -1,10 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 
-module Flow (StepResult(..), FlowId(..), receiveAnswer, main) where
+module Flow (StepResult(..), runFlowInConsole, processAnswer) where
 
-import qualified Flows.Size as Size
-import qualified Flows.TryAtHome as TryAtHome
-import qualified Flows.Checkout as Checkout
 import FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..), Cont(..), State(..), IsQuestion(ask), IsState(step, state),
   AnswerError(..), Answered, runAnswered, ContWithMessage(..))
@@ -91,15 +88,7 @@ loopStack initState current@(h:_) = do
         Right (msgs, stk) -> mapM_ (maybe (return ()) (putStrLn . (":: " ++))) msgs >> loopStack initState stk
     Nothing -> putStrLn "parse error"
 
-
-data FlowId = TryAtHome | Size deriving (Show, Read)
-
-receiveAnswer :: FlowId -> String -> String -> IO StepResult
-receiveAnswer TryAtHome = processAnswer (TryAtHome.Suspended TryAtHome.AskProduct ())
-receiveAnswer Size = processAnswer (Size.Suspended Size.AskDoYou ())
-
--- for testing in GHCi
-main = do
+runFlowInConsole :: IsFlow s s' => s -> IO ()
+runFlowInConsole s = do
   IO.hSetBuffering IO.stdin IO.LineBuffering
-  let start = TryAtHome.Suspended TryAtHome.AskProduct ()
-  loopStack start [state start]
+  loopStack s [state s]

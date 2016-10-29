@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Flow, FlowCont, ParserUtil, BiState
+  exposed-modules:     Flow, Flows, FlowCont, ParserUtil, BiState
                      , Flows.TryAtHome, Flows.Size, Flows.Checkout
                      , Control.Applicative.Utils
   build-depends:       base >= 4.7 && < 5

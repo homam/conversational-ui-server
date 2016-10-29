@@ -2,13 +2,13 @@
 
 module FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..),
-  Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer,
+  Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_,
   (>-*), State(..), IsState(..), IsQuestion(..),
   AnswerError(..), throwAnswerError, Answered, runAnswered, ContWithMessage(..), withMessage) where
 
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Except (MonadError, throwError, runExceptT)
-import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
@@ -127,6 +127,11 @@ readAnswer errMsg cwm (Answer i) = maybe
   (throwAnswerError errMsg)
   cwm
   (readMaybe i)
+
+validateAnswer_ :: (String -> IO (Either String b)) -> (b -> Answered a) -> Answer String -> Answered a
+validateAnswer_ validator cwm (Answer i) = liftIO (validator i) >>= either
+  throwAnswerError
+  cwm
 
 intAnswer :: (Int -> Answered a) -> Answer String -> Answered a
 intAnswer = readAnswer "Please provide a number."

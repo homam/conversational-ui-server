@@ -2,7 +2,7 @@
 
 module Main where
 
-import qualified Flow
+import qualified Flows
 
 import qualified Web.Scotty as S
 import qualified Web.Scotty.Trans as ST
@@ -18,9 +18,9 @@ import Control.Exception.Base (catch, SomeException)
 import qualified Data.Text.Internal.Lazy as LT
 import Debug.Trace (trace)
 
-deriving instance Generic Flow.StepResult
+deriving instance Generic Flows.StepResult
 
-instance JSON.ToJSON Flow.StepResult where
+instance JSON.ToJSON Flows.StepResult where
   toJSON = JSON.genericToJSON (JSON.defaultOptions { omitNothingFields = True })
 
 t s = fromString s :: Text
@@ -38,11 +38,11 @@ server = do
   S.post "/" $ do
       answer <- S.param "answer"
       stack  <- S.param "stack" `S.rescue` const (return "[]")
-      res <- liftIO $ catch (Right <$> Flow.receiveAnswer Flow.TryAtHome stack answer) handler
+      res <- liftIO $ catch (Right <$> Flows.receiveAnswer Flows.TryAtHome stack answer) handler
       either (S.raise . fromString) S.json res
 
       where
-        handler :: SomeException -> IO (Either String Flow.StepResult)
+        handler :: SomeException -> IO (Either String Flows.StepResult)
         handler = return . Left . show
 
 main :: IO ()
