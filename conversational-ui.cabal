@@ -17,6 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Flow, Flows, FlowCont, ParserUtil, BiState
                      , Flows.TryAtHome, Flows.Size, Flows.Checkout
+                     , Flows.Airport, Flows.BookATicket
                      , Control.Applicative.Utils
   build-depends:       base >= 4.7 && < 5
                      , parsec

@@ -5,7 +5,7 @@ module BiState  ((:|:)) where
 import FlowCont (IsQuestion(..), IsState(..))
 
 import Control.Arrow (first)
-import Text.Read (Read(readsPrec), readMaybe)
+import Text.Read (Read(readsPrec))
 
 -- | Union of states, to specify type of 'deserialize'
 data l :|: r = LState l | RState r
