@@ -11,6 +11,7 @@ import Control.Applicative.Utils ((<.>))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 import qualified Flows.Size as Size
 import qualified Flows.Checkout as Checkout
+
 import Control.Monad.IO.Class (liftIO)
 
 newtype Product = Product Int deriving (Read, Show)
@@ -34,6 +35,16 @@ toTryAthomeResult (c, (a, (s, p))) = TryAtHomeResult {
 data Suspended where
   Suspended :: Show as => Stage as -> as -> Suspended
 
+-- | Steps of this flow
+data Stage a where
+  AskProduct  :: Stage ()
+  AskSize     :: Stage Product
+  AskAddress  :: Stage (Size.SizeResult, Product)
+  AskCheckout :: Stage (Address, (Size.SizeResult, Product))
+  AskFinal    :: Stage TryAtHomeResult
+
+deriving instance Show (Stage a)
+
 -- | Note the namespace @TryAtHome@ (it's necessary for avoiding conflicts while reading the @Stack@)
 instance Show Suspended where
   show (Suspended stage as) = "TryAtHome.Suspended " ++ show stage ++ " " ++ show as
@@ -53,16 +64,6 @@ instance ReadParsec Suspended where
     ]
     where
       read' name = parseStage name . Suspended
-
--- | Steps of this flow
-data Stage a where
-  AskProduct  :: Stage ()
-  AskSize     :: Stage Product
-  AskAddress  :: Stage (Size.SizeResult, Product)
-  AskCheckout :: Stage (Address, (Size.SizeResult, Product))
-  AskFinal    :: Stage TryAtHomeResult
-
-deriving instance Show (Stage a)
 
 -- | TryAtHome is a main flow
 instance IsFlow Suspended (Checkout.Suspended :|: Size.Suspended :|: Suspended) where
