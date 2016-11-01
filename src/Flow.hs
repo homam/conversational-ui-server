@@ -10,19 +10,22 @@ import Control.Arrow (first)
 import Text.Read (Read(readsPrec), readMaybe)
 import Data.Maybe (fromMaybe, isJust)
 import qualified System.IO as IO
+import Control.Monad ((>=>))
+import Debug.Trace (trace)
+
+data RunResult =
+    NextQuestion String [Maybe String] Stack (Answer String -> Answered RunResult)
+  | EndOfFlow (Answered ([Maybe String], Stack))
+  | ForkAFlow [Maybe String] Stack (String -> Answered RunResult)
 
 -- | Main function that runs a Stack wih the given answer and returns a new Stack
 -- with any optional messages that might have been produced.
-run :: Stack -> Answer String -> Answered ([Maybe String], Stack)
-run [] _ = return ([], [])
-run (s : ss) i = first reverse <$> (proceed [] ss =<< next s i) where
-
-  proceed :: [Maybe String] -> Stack -> ContWithMessage -> Answered ([Maybe String], Stack)
-  proceed msgs rest (ContWithMessage (Cont s) msg)     = return (msg : msgs, s : rest)
-  proceed msgs rest (ContWithMessage (Start s s') msg) = return (msg : msgs, s' : s : rest)
-  proceed msgs rest (ContWithMessage (End s) msg)      = case rest of
-    (h:t) -> next h (Answer $ show s) >>= proceed (msg : msgs) t
-    []    -> return (msg : msgs, [])
+run :: Stack -> RunResult
+run [] = EndOfFlow $ return ([], [])
+run istk@(s : ss) = case trace (show istk) (next s) of
+  ContWithMessage (Question (q, fs)) msg -> NextQuestion q [msg] istk (fmap (run . (:ss)) . fs)
+  ContWithMessage (End ns) msg -> EndOfFlow $ return ([msg], ns : ss)
+  ContWithMessage (Fork (ns, f)) msg -> ForkAFlow [] (ns : s : ss) (f >=> (\ s' -> return $ run (s' : ss)))
 
 -- | JSON serializable object that represents the result of running n Stack with an Answer.
 data StepResult = StepResult {
@@ -40,55 +43,75 @@ processAnswer initState saved i =
   case deseralizeFlow initState (read saved) of
     Just loaded -> do
       let beforeStack = stack loaded
-      state <- runAnswered $ case beforeStack of
-        (_:_) -> run beforeStack (Answer i)
-        _ -> return ([], [state initState])
-      return $ case state of
-        -- validatoin failed
-        Left (AnswerError e) ->
-          let (q, s) = go beforeStack
-          in StepResult {
-              stepQuestion = q,
-              stepSerializedState = s,
-              stepBadAnswerError = Just e,
-              stepMessage = []
-            }
-        -- move forward in the graph
-        Right (msg, stk) ->
-          let (q, s) = go stk
-          in StepResult {
-              stepQuestion = q,
-              stepSerializedState = s,
+      print $ length beforeStack
+      case beforeStack of
+        (_:_) -> case run beforeStack of
+          NextQuestion _ msgs _ f -> runAnswered (f $ Answer i) >>= handleAns msgs -- \ s -> case s of
+        _ -> handleAns [] (Right $ run [state initState])
+
+        where
+          handleAns :: [Maybe String] -> Either AnswerError RunResult -> IO StepResult
+          -- TODO: handle leftAnswerErr
+          handleAns imsgs (Right (NextQuestion q msgs stk _)) = return StepResult {
+              stepQuestion = Just q,
+              stepSerializedState = show $ serialize stk,
               stepBadAnswerError = Nothing,
-              stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] msg
+              stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] (imsgs ++ msgs)
             }
-      where
-        go :: Stack -> (Maybe String, String)
-        go stk =
-          let serialized = show $ serialize stk in
-          case stk of
-            []    -> (Nothing, serialized)
-            (h:_) -> (question h, serialized)
+          handleAns imsgs (Right (EndOfFlow mMsgs)) = runAnswered mMsgs >>= \ r -> case r of
+            Left (AnswerError e) -> return StepResult {
+              stepQuestion = Nothing,
+              stepSerializedState = [],
+              stepBadAnswerError = Just e,
+              stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] imsgs
+            }
+            Right (msgs, h : t) ->
+              case run t of -- TODO: msgs' ++ msgs
+                (ForkAFlow msgs' stk' f) -> runAnswered (f $ show h) >>= handleAns (imsgs ++ msgs ++ msgs')
+                eof@(EndOfFlow mMsgs) -> handleAns (imsgs ++ msgs) (Right eof)
+            Right (msgs, _) -> return StepResult {
+                stepQuestion = Nothing,
+                stepSerializedState = [],
+                stepBadAnswerError = Nothing,
+                stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] (imsgs ++ msgs)
+              }
+
+          handleAns imsgs (Right (ForkAFlow msgs (h:t) f)) = return StepResult {
+              stepQuestion = question h,
+              stepSerializedState = show $ serialize (h:t),
+              stepBadAnswerError = Nothing,
+              stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] (imsgs ++ msgs)
+            }
     Nothing -> error $ "Cannot parse: " ++ saved
 
 -- | For testing in GHCi
-loopStack :: IsFlow s s' => s -> Stack -> IO ()
-loopStack _ [] = putStrLn "Fin"
-loopStack initState current@(h:_) = do
-  maybe (return ()) (putStrLn . (">> " ++)) (question h)
-  let saved = serialize current
-  putStrLn $ "saved = " ++ show saved
-  case deseralizeFlow initState saved of
-    Just loaded -> do
-      let beforeStack = stack loaded
+loopStack :: Stack -> IO Stack
+loopStack [] = putStrLn "Fin" >> return []
+loopStack beforeStack =
+  case run beforeStack of
+    NextQuestion q msgs stk f -> do
+      mapM_ (maybe (return ()) (putStrLn . (":: " ++))) msgs
+      putStrLn $ ">> " ++ q
       i <- Answer <$> readLn
-      state <- runAnswered $ run beforeStack i
-      case state of
-        Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack initState beforeStack
-        Right (msgs, stk) -> mapM_ (maybe (return ()) (putStrLn . (":: " ++))) msgs >> loopStack initState stk
-    Nothing -> putStrLn "parse error"
+      runAnswered (f i) >>= handleAns stk
+    EndOfFlow m -> handleEndOfFlow m
+    ForkAFlow msgs stk f -> loopStack stk >>= \ (h:t) -> trace "** ForkAFlowCallback" $ runAnswered (f $ show h) >>= handleAns t
+    where
+      handleAns stk ans = case ans of
+        Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack beforeStack
+        Right (NextQuestion q msgs stk f) -> loopStack stk
+        Right (EndOfFlow m) -> handleEndOfFlow m >>= loopStack --TODO: just loopStack
+        Right (ForkAFlow msgs stk f) -> loopStack stk >>= \ (h:t) -> trace "** ForkAFlowCallback" $ runAnswered (f $ show h) >>= handleAns t
+
+      handleEndOfFlow m = runAnswered m >>= \ a -> case a of
+        Left (AnswerError e) -> putStrLn ("!! " ++ e) >> loopStack beforeStack
+        Right (msgs, stk') -> do
+          mapM_ (maybe (return ()) (putStrLn . (":: " ++))) msgs
+          return stk'
+
 
 runFlowInConsole :: IsFlow s s' => s -> IO ()
 runFlowInConsole s = do
   IO.hSetBuffering IO.stdin IO.LineBuffering
-  loopStack s [state s]
+  loopStack [state s] -- [state s]
+  return ()

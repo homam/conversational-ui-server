@@ -3,7 +3,8 @@
 module FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..),
   Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_,
-  (>-*), State(..), IsState(..), IsQuestion(..),
+  -- (>-*),
+  State(..), IsState(..), IsQuestion(..),
   AnswerError(..), throwAnswerError, Answered, runAnswered, ContWithMessage(..), withMessage) where
 
 import Control.Monad.Trans.Except (ExceptT)
@@ -15,6 +16,8 @@ import Data.Maybe (fromMaybe)
 import Data.Foldable (find)
 import Data.Char (toLower)
 
+import Control.Applicative.Utils ((<.>))
+
 -- | Answer from user
 newtype Answer a = Answer { unAnswer :: a } deriving Functor
 
@@ -22,7 +25,10 @@ newtype Answer a = Answer { unAnswer :: a } deriving Functor
 -- @Cont newState@: to update the state of the flow continue the flow to a new step
 -- @Start currentState initState@: to start a new (sub-) flow
 -- @End finalState@: to end the current flow (or sub flow).
-data Cont = Cont State | Start State State | End State deriving (Show)
+data Cont =
+    Question (String, Answer String -> Answered State)
+  | Fork (State, String -> Answered State)
+  | End State
 
 -- | Each step of the flow returns an optional message along with continuation instruction
 data ContWithMessage = ContWithMessage {
@@ -51,17 +57,17 @@ throwAnswerError :: String -> Answered a
 throwAnswerError = throwError . AnswerError
 
 -- | Continue in the same flow
-cont :: IsState s => s -> ContWithMessage
-cont = withoutMessage . Cont . state
+cont :: IsState s => String -> (Answer String -> Answered s) -> ContWithMessage
+cont q fs = withoutMessage $ Question (q, state <.> fs)
 
 -- | Start a new flow (from inside the current flow)
-start :: (IsState s, IsState s') => s -> s' -> ContWithMessage
-start s s' = withoutMessage $ Start (state s) (state s')
+start :: (IsState s, IsState s') => s -> (s -> Answered s') -> ContWithMessage
+start s f = withoutMessage $ Fork (state s, state <.> f . read)
 
 -- | Save the latest result @ms@ in the Stack and fork a new flow.
-(>-*) :: (IsState s, IsState s') => Answered s -> s' -> Answered ContWithMessage
-ms >-* s' = flip start s'<$> ms
-infixr 5 >-*
+-- (>-*) :: (IsState s, IsState s') => Answered s -> s' -> Answered ContWithMessage
+-- ms >-* s' = flip start s'<$> ms
+-- infixr 5 >-*
 
 -- | End the current flow
 end :: IsState s => s -> ContWithMessage
@@ -73,7 +79,7 @@ class IsQuestion s where
 
 -- | State is something, which has the next action, a string representation and maybe a question
 data State = State {
-  next :: Answer String -> Answered ContWithMessage,
+  next :: ContWithMessage,
   question :: Maybe String,
   save :: String
 }
@@ -101,7 +107,7 @@ class (IsState s, IsState s') => IsFlow s s' | s -> s' where
 class (Read s, Show s, IsQuestion s) => IsState s where
 
   -- | Specifies how to proceed given the current state 's' and an `Answer`
-  step :: s -> Answer String -> Answered ContWithMessage
+  step :: s -> ContWithMessage
 
   state :: s -> State
   state x = State {

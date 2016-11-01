@@ -73,20 +73,25 @@ instance IsQuestion Suspended where
 
 -- | 'step' function describes how the flow navigates from each step to the next
 instance IsState Suspended where
-  step (Suspended AskCity s) (Answer i) = next =<< liftIO (fetchCity i)
+  step (Suspended AskCity s) = cont "Where do you want to fly to?" (\ (Answer i) -> next =<< liftIO (fetchCity i))
     where
-      next ls@(h:n:_) = return $ cont $ Suspended AskAirport (ls, s)
-      next   [h]      = return $ cont $ Suspended AskConfirm (h, s)
+      next ls@(h:n:_) = return $ Suspended AskAirport (ls, s)
+      next   [h]      =  return $ Suspended AskConfirm (h, s)
       next    _       = throwAnswerError "No airport found"
 
-  step (Suspended AskAirport (cities, itin)) ans = selectAnswer
-    ("Please answer with either " ++ citiesToString cities)
-    (map (\ city@(City c) -> ([c], return $ cont $ Suspended AskConfirm (city, itin))) cities)
-    ans
+  step (Suspended AskAirport (cities, itin)) = cont
+    ("Select one airport " ++ citiesToString cities)
+    (selectAnswer
+      ("Please answer with either " ++ citiesToString cities)
+      (map (\ city@(City c) -> ([c], return $ Suspended AskConfirm (city, itin))) cities)
+    )
 
-  step (Suspended AskConfirm (city, itin)) ans = yesNoAnswer
-    (return $ end $ Suspended AskFinal $ AirportResult itin city)
-    (return $ cont (Suspended AskCity itin) `withMessage` "Select another city.")
-    ans
-
-  step (Suspended AskFinal _) ans = error "No next step"
+  step (Suspended AskConfirm (city, itin)) = cont
+    "Please confirm you selection."
+    (yesNoAnswer
+      (return $ Suspended AskFinal $ AirportResult itin city)
+      (return $ Suspended AskCity itin)  -- `withMessage` "Select another city.")
+    )
+  --   ans
+  --
+  step p@(Suspended AskFinal _) = end p `withMessage` "You selected your Airport"
