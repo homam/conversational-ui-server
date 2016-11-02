@@ -3,7 +3,7 @@
 
 module Flows.Airport (Suspended(Suspended), AirportResult(..), Itinerary(..), City(..), Stage(AskCity, AskFinal)) where
 
-import FlowCont (Answer(..), Cont(..), IsQuestion(..), IsState(..),
+import FlowCont (Answer(..), Cont(..), IsState(..),
   cont, end, yesNoAnswer, intAnswer, selectAnswer,
   validateAnswer_, throwAnswerError,
   withMessage,
@@ -62,22 +62,17 @@ fetchCity s = return []
 
 citiesToString cities = foldl1 (++) (intersperse " or " (map unCity cities))
 
-instance IsQuestion Suspended where
-  ask (Suspended AskCity itin) = Just ("Where are you flying " ++ itin' ++ "?") where
-    itin' = case itin of
-      Origin -> "from"
-      Destination -> "to"
-  ask (Suspended AskAirport (cities, _)) = Just ("Please choose one airport: " ++ citiesToString cities)
-  ask (Suspended AskConfirm (City c, _)) = Just ("Confirm your selection: " ++ c)
-  ask (Suspended AskFinal _) = Nothing
-
 -- | 'step' function describes how the flow navigates from each step to the next
 instance IsState Suspended where
-  step (Suspended AskCity s) = cont "Where do you want to fly to?" (\ (Answer i) -> next =<< liftIO (fetchCity i))
+  step (Suspended AskCity s) = cont ("Where are you flying " ++ itin' ++ "?") (\ (Answer i) -> next =<< liftIO (fetchCity i))
     where
       next ls@(h:n:_) = return $ Suspended AskAirport (ls, s)
       next   [h]      =  return $ Suspended AskConfirm (h, s)
       next    _       = throwAnswerError "No airport found"
+
+      itin' = case s of
+        Origin -> "from"
+        Destination -> "to"
 
   step (Suspended AskAirport (cities, itin)) = cont
     ("Select one airport " ++ citiesToString cities)

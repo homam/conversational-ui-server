@@ -3,7 +3,7 @@
 
 module Flows.BookATicket (Suspended(..), Stage(AskOrigin)) where
 
-import FlowCont (Answer(..), IsQuestion(..), IsState(..),
+import FlowCont (Answer(..), IsState(..),
   start, cont, end, intAnswer, withMessage,
   IsFlow(..), deserialize
   , Answered(..), ContWithMessage(..))
@@ -48,13 +48,6 @@ instance ReadParsec Suspended where
 -- | BookATicket is a main flow
 instance IsFlow Suspended (Airport.Suspended :|: Suspended) where
   deseralizeFlow (Suspended _ _) = deserialize
-
--- | Questions that are presented to the user at each step of this flow
-instance IsQuestion Suspended where
-  ask (Suspended AskInit        _) = Nothing
-  ask (Suspended AskOrigin      _) = Nothing
-  ask (Suspended AskDestination _) = Nothing
-  ask (Suspended AskWhen        _) = Just "When do you want to fly?"
 
 -- | 'step' function describes how the flow navigates from each step to the next
 instance IsState Suspended where

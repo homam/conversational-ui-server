@@ -4,7 +4,7 @@ module FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..),
   Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_,
   -- (>-*),
-  State(..), IsState(..), IsQuestion(..),
+  State(..), IsState(..),
   AnswerError(..), throwAnswerError, Answered, runAnswered, ContWithMessage(..), withMessage) where
 
 import Control.Monad.Trans.Except (ExceptT)
@@ -73,14 +73,9 @@ start s f = withoutMessage $ Fork (state s, state <.> f . read)
 end :: IsState s => s -> ContWithMessage
 end = withoutMessage . End . state
 
--- | Whether the state is a Question
-class IsQuestion s where
-  ask :: s -> Maybe String
-
 -- | State is something, which has the next action, a string representation and maybe a question
 data State = State {
   next :: ContWithMessage,
-  question :: Maybe String,
   save :: String
 }
 
@@ -104,7 +99,7 @@ stack = map state
 class (IsState s, IsState s') => IsFlow s s' | s -> s' where
   deseralizeFlow :: s -> [String] -> Maybe [s']
 
-class (Read s, Show s, IsQuestion s) => IsState s where
+class (Read s, Show s) => IsState s where
 
   -- | Specifies how to proceed given the current state 's' and an `Answer`
   step :: s -> ContWithMessage
@@ -112,7 +107,6 @@ class (Read s, Show s, IsQuestion s) => IsState s where
   state :: s -> State
   state x = State {
       next = step x,
-      question = ask x,
       save = show x
     }
 

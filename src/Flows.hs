@@ -23,3 +23,17 @@ consoleApp BookATicket = runFlowInConsole (BookATicket.Suspended BookATicket.Ask
 
 -- for testing in GHCi
 main = consoleApp BookATicket
+
+test =
+  receiveAnswer BookATicket "[]" ""
+  >>= next "Dubai"
+  >>= next "DXB"
+  >>= next "yes"
+  >>= next "Amsterdam"
+  >>= next "yes"
+  where
+    next :: String -> StepResult -> IO StepResult
+    next ans res = do
+      putStrLn $ replicate 30 '-'
+      print res
+      receiveAnswer BookATicket (stepSerializedState res) ans

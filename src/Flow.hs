@@ -3,7 +3,7 @@
 module Flow (StepResult(..), runFlowInConsole, processAnswer) where
 
 import FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
-  Answer(..), Cont(..), State(..), IsQuestion(ask), IsState(step, state),
+  Answer(..), Cont(..), State(..), IsState(step, state),
   AnswerError(..), Answered, runAnswered, ContWithMessage(..))
 
 import Control.Arrow (first)
@@ -76,12 +76,13 @@ processAnswer initState saved i =
                 stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] (imsgs ++ msgs)
               }
 
-          handleAns imsgs (Right (ForkAFlow msgs (h:t) f)) = return StepResult {
-              stepQuestion = question h,
-              stepSerializedState = show $ serialize (h:t),
-              stepBadAnswerError = Nothing,
-              stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] (imsgs ++ msgs)
-            }
+          handleAns imsgs (Right (ForkAFlow msgs stk@(h:t) f)) = handleAns msgs (Right $ run stk)
+          -- const $ return StepResult {
+          --    stepQuestion = undefined, -- question h,
+          --    stepSerializedState = show $ serialize (h:t),
+          --    stepBadAnswerError = Nothing,
+          --    stepMessage = foldr (\ m xs -> maybe xs (:xs) m) [] (imsgs ++ msgs)
+          --  }
     Nothing -> error $ "Cannot parse: " ++ saved
 
 -- | For testing in GHCi
