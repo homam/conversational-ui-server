@@ -3,12 +3,15 @@
 module FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..),
   Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_,
+  tell,
   -- (>-*),
   State(..), IsState(..),
-  AnswerError(..), throwAnswerError, Answered, runAnswered, ContWithMessage(..), withMessage) where
+  AnswerError(..), throwAnswerError, Answered, runAnswered) where
 
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Except (MonadError, throwError, runExceptT)
+import Control.Monad.Trans.Writer (WriterT, runWriterT)
+import Control.Monad.Writer.Lazy (MonadWriter(..), tell)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Text.Read (readMaybe)
@@ -28,41 +31,29 @@ newtype Answer a = Answer { unAnswer :: a } deriving Functor
 data Cont =
     Question (String, Answer String -> Answered State)
   | Fork (State, String -> Answered State)
-  | End State
-
--- | Each step of the flow returns an optional message along with continuation instruction
-data ContWithMessage = ContWithMessage {
-  contWith :: Cont,
-  contMessage :: Maybe String
-}
-
-withoutMessage :: Cont -> ContWithMessage
-withoutMessage c = ContWithMessage c Nothing
-
-withMessage :: ContWithMessage -> String -> ContWithMessage
-ContWithMessage c _ `withMessage` s = ContWithMessage c (Just s)
+  | End (Answered State)
 
 -- | Answer processing error
 newtype AnswerError = AnswerError String
 
 -- Answer -> IO (Either AnswerError c)
 newtype Answered c = Answered {
-    unAnswered :: ExceptT AnswerError IO c
-  } deriving (Functor, Applicative, Monad, MonadError AnswerError, MonadIO)
+    unAnswered :: ExceptT AnswerError (WriterT [String] IO) c
+  } deriving (Functor, Applicative, Monad, MonadError AnswerError, MonadWriter [String], MonadIO)
 
-runAnswered :: Answered c -> IO (Either AnswerError c)
-runAnswered = runExceptT . unAnswered
+runAnswered :: Answered a -> IO (Either AnswerError a, [String])
+runAnswered = runWriterT . runExceptT . unAnswered
 
 throwAnswerError :: String -> Answered a
 throwAnswerError = throwError . AnswerError
 
 -- | Continue in the same flow
-cont :: IsState s => String -> (Answer String -> Answered s) -> ContWithMessage
-cont q fs = withoutMessage $ Question (q, state <.> fs)
+cont :: IsState s => String -> (Answer String -> Answered s) -> Cont
+cont q fs = Question (q, state <.> fs)
 
 -- | Start a new flow (from inside the current flow)
-start :: (IsState s, IsState s') => s -> (s -> Answered s') -> ContWithMessage
-start s f = withoutMessage $ Fork (state s, state <.> f . read)
+start :: (IsState s, IsState s') => s -> (s -> Answered s') -> Cont
+start s f = Fork (state s, state <.> f . read)
 
 -- | Save the latest result @ms@ in the Stack and fork a new flow.
 -- (>-*) :: (IsState s, IsState s') => Answered s -> s' -> Answered ContWithMessage
@@ -70,12 +61,12 @@ start s f = withoutMessage $ Fork (state s, state <.> f . read)
 -- infixr 5 >-*
 
 -- | End the current flow
-end :: IsState s => s -> ContWithMessage
-end = withoutMessage . End . state
+end :: IsState s => Answered s -> Cont
+end s = End (state <$> s)
 
 -- | State is something, which has the next action, a string representation and maybe a question
 data State = State {
-  next :: ContWithMessage,
+  next :: Cont,
   save :: String
 }
 
@@ -102,7 +93,7 @@ class (IsState s, IsState s') => IsFlow s s' | s -> s' where
 class (Read s, Show s) => IsState s where
 
   -- | Specifies how to proceed given the current state 's' and an `Answer`
-  step :: s -> ContWithMessage
+  step :: s -> Cont
 
   state :: s -> State
   state x = State {

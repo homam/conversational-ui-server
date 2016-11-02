@@ -4,9 +4,10 @@
 module Flows.BookATicket (Suspended(..), Stage(AskOrigin)) where
 
 import FlowCont (Answer(..), IsState(..),
-  start, cont, end, intAnswer, withMessage,
-  IsFlow(..), deserialize
-  , Answered(..), ContWithMessage(..))
+  start, cont, end, intAnswer,
+  IsFlow(..), deserialize,
+  Answered(..),
+  tell)
 import BiState ((:|:))
 import Control.Applicative.Utils ((<.>))
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
@@ -62,13 +63,16 @@ instance IsState Suspended where
   step (Suspended AskDestination origin) = start
     (Airport.Suspended Airport.AskCity Airport.Destination :: Airport.Suspended)
     ((\  --i -> case read i of
-      (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) ->
+      (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) -> do
+        tell ["Thanks for selecting the destination"]
         return $ Suspended AskWhen (origin, city)
       -- _ -> error "Parse error!!"
     ) :: Airport.Suspended -> Answered Suspended)
-    `withMessage` "HAHA"
 
-  step p@(Suspended AskWhen _) =  end p `withMessage` "Done for now"
+
+  step p@(Suspended AskWhen _) = end $ do
+    tell ["Done for now"]
+    return p
   -- step (Suspended AskOrigin ()) (Answer i) =
   --   let flowResult = read i :: Airport.Suspended
   --   in case flowResult of

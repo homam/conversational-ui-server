@@ -6,7 +6,7 @@ module Flows.Airport (Suspended(Suspended), AirportResult(..), Itinerary(..), Ci
 import FlowCont (Answer(..), Cont(..), IsState(..),
   cont, end, yesNoAnswer, intAnswer, selectAnswer,
   validateAnswer_, throwAnswerError,
-  withMessage,
+  tell,
   IsFlow(..), deserialize)
 import ParserUtil (parseSuspended, parseStage, ReadParsec(readsPrecRP, readParsec))
 
@@ -89,4 +89,6 @@ instance IsState Suspended where
     )
   --   ans
   --
-  step p@(Suspended AskFinal _) = end p `withMessage` "You selected your Airport"
+  step p@(Suspended AskFinal _) = end $ do
+    tell ["You selected your Airport"]
+    return p
