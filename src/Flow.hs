@@ -6,9 +6,7 @@ import FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..), Cont(..), State(..), IsState(step, state),
   AnswerError(..), Answered, runAnswered)
 
-import Control.Arrow (first)
-import Text.Read (Read(readsPrec), readMaybe)
-import Data.Maybe (fromMaybe, isJust)
+import Control.Arrow ((>>>))
 import qualified System.IO as IO
 import Control.Monad ((>=>))
 import Debug.Trace (trace)
@@ -25,7 +23,7 @@ run [] = EndOfFlow $ return []
 run istk@(s : ss) = case next s of
   Question (q, fs) ->  NextQuestion q istk (fmap (run . (:ss)) . fs)
   End ns -> EndOfFlow $ (: ss) <$> ns
-  Fork (ns, f) -> ForkAFlow (ns : s : ss) (f >=> (\ s' -> return $ run (s' : ss)))
+  Fork (ns, f) -> ForkAFlow (ns : s : ss) (f >>> fmap (run . (: ss))) -- (f >=> (\ s' -> return $ run (s' : ss)))
 
 -- | JSON serializable object that represents the result of running n Stack with an Answer.
 data StepResult = StepResult {
@@ -43,22 +41,29 @@ processAnswer initState saved i =
   case deseralizeFlow initState (read saved) of
     Just loaded -> do
       let beforeStack = stack loaded
-      print $ length beforeStack
       case beforeStack of
         (_:_) -> case run beforeStack of
-          NextQuestion _ _ f -> runAnswered (f $ Answer i) >>= uncurry handleAns -- \ s -> case s of
-        _ -> handleAns (Right $ run [state initState]) []
+          NextQuestion _ _ f -> runAnswered (f $ Answer i) >>= uncurry handleAns
+        _ -> handleAns (Right $ run [state initState]) [] -- empty Stack, initialize with initState
 
         where
           handleAns :: Either AnswerError RunResult -> [String] -> IO StepResult
-          -- TODO: handle leftAnswerErr
+          handleAns (Left (AnswerError e)) msgs = return StepResult {
+              stepQuestion = question,
+              stepSerializedState = saved,
+              stepBadAnswerError = Just e,
+              stepMessage = msgs
+            } where
+              question = case run (stack loaded) of
+                NextQuestion q _ _ -> Just q
+                _ -> Nothing
           handleAns (Right (NextQuestion q stk _)) msgs = return StepResult {
               stepQuestion = Just q,
               stepSerializedState = show $ serialize stk,
               stepBadAnswerError = Nothing,
               stepMessage = msgs
             }
-          handleAns (Right (EndOfFlow mMsgs)) imsgs = runAnswered mMsgs >>= \ r -> case r of
+          handleAns (Right (EndOfFlow astk)) imsgs = runAnswered astk >>= \ r -> case r of
             (Left (AnswerError e), msgs) -> return StepResult {
               stepQuestion = Nothing,
               stepSerializedState = [],
@@ -67,13 +72,13 @@ processAnswer initState saved i =
             }
             (Right (h : t), msgs) ->
               case run t of
-                (ForkAFlow stk' f) -> runAnswered (f $ show h) >>= \ (a, b) -> handleAns a (b ++ msgs ++ imsgs)
-                eof@(EndOfFlow mMsgs) -> runAnswered mMsgs >>= \ (_, b) -> handleAns (Right eof) (b ++ msgs ++ imsgs) -- handleAns (imsgs ++ msgs) (Right eof)
+                (ForkAFlow stk' f) -> runAnswered (f $ show h) >>= \ (a, b) -> handleAns a (imsgs ++ msgs ++ b)
+                eof@(EndOfFlow astk) -> runAnswered astk >>= \ (_, b) -> handleAns (Right eof) (imsgs ++ msgs ++ b)
             (Right _, msgs) -> return StepResult {
                 stepQuestion = Nothing,
                 stepSerializedState = [],
                 stepBadAnswerError = Nothing,
-                stepMessage = msgs ++ imsgs
+                stepMessage = imsgs ++ msgs
               }
 
           handleAns (Right (ForkAFlow stk@(h:t) f)) msgs = handleAns (Right $ run stk) msgs
@@ -86,7 +91,6 @@ loopStack [] = putStrLn "Fin" >> return []
 loopStack beforeStack =
   case run beforeStack of
     NextQuestion q stk f -> do
-      -- mapM_ (maybe (return ()) (putStrLn . (":: " ++))) msgs
       putStrLn $ ">> " ++ q
       i <- Answer <$> readLn
       runAnswered (f i) >>= uncurry handleAns
@@ -113,5 +117,5 @@ loopStack beforeStack =
 runFlowInConsole :: IsFlow s s' => s -> IO ()
 runFlowInConsole s = do
   IO.hSetBuffering IO.stdin IO.LineBuffering
-  loopStack [state s] -- [state s]
+  loopStack [state s]
   return ()

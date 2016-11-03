@@ -67,7 +67,7 @@ instance IsState Suspended where
   step (Suspended AskCity s) = cont ("Where are you flying " ++ itin' ++ "?") (\ (Answer i) -> next =<< liftIO (fetchCity i))
     where
       next ls@(h:n:_) = return $ Suspended AskAirport (ls, s)
-      next   [h]      =  return $ Suspended AskConfirm (h, s)
+      next   [h]      = return $ Suspended AskConfirm (h, s)
       next    _       = throwAnswerError "No airport found"
 
       itin' = case s of
@@ -84,11 +84,15 @@ instance IsState Suspended where
   step (Suspended AskConfirm (city, itin)) = cont
     "Please confirm you selection."
     (yesNoAnswer
-      (return $ Suspended AskFinal $ AirportResult itin city)
-      (return $ Suspended AskCity itin)  -- `withMessage` "Select another city.")
+      (do
+        tell ["A) ..."]
+        return $ Suspended AskFinal $ AirportResult itin city)
+      (do
+        tell ["Select another city"]
+        return $ Suspended AskCity itin
+      )
     )
-  --   ans
-  --
+
   step p@(Suspended AskFinal _) = end $ do
-    tell ["You selected your Airport"]
+    tell ["B) You selected your Airport"]
     return p

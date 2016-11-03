@@ -31,9 +31,17 @@ test =
   >>= next "yes"
   >>= next "Amsterdam"
   >>= next "yes"
+  >>= next "--"
+  >>= next "2"
+  >>= info
   where
     next :: String -> StepResult -> IO StepResult
     next ans res = do
-      putStrLn $ replicate 30 '-'
-      print res
+      info res
+      putStrLn $ ">> " ++ ans
       receiveAnswer BookATicket (stepSerializedState res) ans
+    info res = do
+      putStrLn $ replicate 30 '-'
+      mapM_ (putStrLn . ("!! " ++)) (stepBadAnswerError res)
+      mapM_ (putStrLn . (":: " ++)) (stepMessage res)
+      mapM_ (putStrLn . ("?? " ++)) (stepQuestion res)

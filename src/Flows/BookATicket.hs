@@ -21,7 +21,8 @@ data Stage a where
   AskInit        :: Stage ()
   AskOrigin      :: Stage ()
   AskDestination :: Stage Airport.City
-  AskWhen        :: Stage (Airport.City, Airport.City)
+  AskHowMany     :: Stage (Airport.City, Airport.City)
+  AskWhen        :: Stage (Int, (Airport.City, Airport.City))
   -- AskCheckout :: Stage (Address, (Size.SizeResult, Product))
   -- AskFinal    :: Stage BookATicketResult
 
@@ -41,6 +42,7 @@ instance ReadParsec Suspended where
         read' "AskInit"        AskInit
       , read' "AskOrigin"      AskOrigin
       , read' "AskDestination" AskDestination
+      , read' "AskHowMany"     AskHowMany
       , read' "AskWhen"        AskWhen
     ]
     where
@@ -54,28 +56,23 @@ instance IsFlow Suspended (Airport.Suspended :|: Suspended) where
 instance IsState Suspended where
   step (Suspended AskOrigin ()) = start
     (Airport.Suspended Airport.AskCity Airport.Origin :: Airport.Suspended)
-    ((\  --i -> case read i of
-      (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) ->
+    ((\ (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) -> do
+        tell ["C) Thanks for selecting the origin " ++ Airport.unCity city]
         return $ Suspended AskDestination city
-      -- _ -> error "Parse error!!"
     ) :: Airport.Suspended -> Answered Suspended)
 
   step (Suspended AskDestination origin) = start
     (Airport.Suspended Airport.AskCity Airport.Destination :: Airport.Suspended)
-    ((\  --i -> case read i of
-      (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) -> do
-        tell ["Thanks for selecting the destination"]
-        return $ Suspended AskWhen (origin, city)
-      -- _ -> error "Parse error!!"
+    ((\ (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) -> do
+        tell ["C) Thanks for selecting the destination " ++ Airport.unCity city]
+        return $ Suspended AskHowMany (origin, city)
     ) :: Airport.Suspended -> Answered Suspended)
 
+  step (Suspended AskHowMany s) = cont
+    "How many ticket?"
+    (intAnswer (\ i -> return $ Suspended AskWhen (i, s)))
 
   step p@(Suspended AskWhen _) = end $ do
     tell ["Done for now"]
+    tell ["More to come ..."]
     return p
-  -- step (Suspended AskOrigin ()) (Answer i) =
-  --   let flowResult = read i :: Airport.Suspended
-  --   in case flowResult of
-  --     Airport.Suspended Airport.AskFinal s' ->
-  --       return (Suspended AskDestination (Airport.airportCity s')) >-* Airport.Suspended Airport.AskCity Airport.Destination
-  --     _ -> error ("error: " ++ i ++ " is not of type Airport.Suspended Airport.AskFinal s")

@@ -55,11 +55,6 @@ cont q fs = Question (q, state <.> fs)
 start :: (IsState s, IsState s') => s -> (s -> Answered s') -> Cont
 start s f = Fork (state s, state <.> f . read)
 
--- | Save the latest result @ms@ in the Stack and fork a new flow.
--- (>-*) :: (IsState s, IsState s') => Answered s -> s' -> Answered ContWithMessage
--- ms >-* s' = flip start s'<$> ms
--- infixr 5 >-*
-
 -- | End the current flow
 end :: IsState s => Answered s -> Cont
 end s = End (state <$> s)
