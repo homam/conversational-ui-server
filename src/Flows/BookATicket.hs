@@ -18,7 +18,6 @@ data Suspended where
 
 -- | Steps of this flow
 data Stage a where
-  AskInit        :: Stage ()
   AskOrigin      :: Stage ()
   AskDestination :: Stage Airport.City
   AskHowMany     :: Stage (Airport.City, Airport.City)
@@ -39,8 +38,7 @@ instance Read Suspended where
 -- | Is there a better way?
 instance ReadParsec Suspended where
   readParsec = parseSuspended "BookATicket" [
-        read' "AskInit"        AskInit
-      , read' "AskOrigin"      AskOrigin
+        read' "AskOrigin"      AskOrigin
       , read' "AskDestination" AskDestination
       , read' "AskHowMany"     AskHowMany
       , read' "AskWhen"        AskWhen
@@ -57,22 +55,22 @@ instance IsState Suspended where
   step (Suspended AskOrigin ()) = start
     (Airport.Suspended Airport.AskCity Airport.Origin :: Airport.Suspended)
     ((\ (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) -> do
-        tell ["C) Thanks for selecting the origin " ++ Airport.unCity city]
+        tell $ "C) Thanks for selecting the origin " ++ Airport.unCity city
         return $ Suspended AskDestination city
     ) :: Airport.Suspended -> Answered Suspended)
 
   step (Suspended AskDestination origin) = start
     (Airport.Suspended Airport.AskCity Airport.Destination :: Airport.Suspended)
     ((\ (Airport.Suspended Airport.AskFinal (Airport.AirportResult itin city)) -> do
-        tell ["C) Thanks for selecting the destination " ++ Airport.unCity city]
+        tell $ "C) Thanks for selecting the destination " ++ Airport.unCity city
         return $ Suspended AskHowMany (origin, city)
     ) :: Airport.Suspended -> Answered Suspended)
 
   step (Suspended AskHowMany s) = cont
-    "How many ticket?"
+    "How many tickets?"
     (intAnswer (\ i -> return $ Suspended AskWhen (i, s)))
 
   step p@(Suspended AskWhen _) = end $ do
-    tell ["Done for now"]
-    tell ["More to come ..."]
+    tell "Done for now"
+    tell "More to come ..."
     return p

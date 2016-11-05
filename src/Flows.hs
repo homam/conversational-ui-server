@@ -7,7 +7,7 @@ import Flow (StepResult(..), processAnswer, runFlowInConsole)
 import qualified Flows.Airport as Airport
 import qualified Flows.BookATicket as BookATicket
 
-data FlowId = TryAtHome | Size | Airport | BookATicket deriving (Show, Read)
+data FlowId = Airport | BookATicket deriving (Show, Read) -- TryAtHome | Size |
 
 receiveAnswer :: FlowId -> String -> String -> IO StepResult
 -- receiveAnswer TryAtHome = processAnswer (TryAtHome.Suspended TryAtHome.AskProduct ())
@@ -34,14 +34,26 @@ test =
   >>= next "--"
   >>= next "2"
   >>= info
+    where
+      next = next' BookATicket
+
+test1 =
+  receiveAnswer Airport "[]" ""
+  >>= next "Dubai"
+  >>= next "What"
+  >>= next "DXB"
+  >>= next "y"
+  >>= info
   where
-    next :: String -> StepResult -> IO StepResult
-    next ans res = do
-      info res
-      putStrLn $ ">> " ++ ans
-      receiveAnswer BookATicket (stepSerializedState res) ans
-    info res = do
-      putStrLn $ replicate 30 '-'
-      mapM_ (putStrLn . ("!! " ++)) (stepBadAnswerError res)
-      mapM_ (putStrLn . (":: " ++)) (stepMessage res)
-      mapM_ (putStrLn . ("?? " ++)) (stepQuestion res)
+    next = next' Airport
+
+next' :: FlowId -> String -> StepResult -> IO StepResult
+next' fid ans res = do
+  info res
+  putStrLn $ ">> " ++ ans
+  receiveAnswer fid (stepSerializedState res) ans
+info res = do
+  putStrLn $ replicate 30 '-'
+  mapM_ (putStrLn . ("!! " ++)) (stepBadAnswerError res)
+  mapM_ (putStrLn . (":: " ++)) (stepMessage res)
+  mapM_ (putStrLn . ("?? " ++)) (stepQuestion res)

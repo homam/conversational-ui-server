@@ -4,14 +4,13 @@
 module Flows.Airport (Suspended(Suspended), AirportResult(..), Itinerary(..), City(..), Stage(AskCity, AskFinal)) where
 
 import FlowCont (Answer(..), Cont(..), IsState(..),
-  cont, end, yesNoAnswer, intAnswer, selectAnswer,
+  cont, end, yesNoAnswer, intAnswer, selectAnswer, fetchAnswers,
   validateAnswer_, throwAnswerError,
   tell,
   IsFlow(..), deserialize)
 import ParserUtil (parseSuspended, parseStage, ReadParsec(readsPrecRP, readParsec))
 
 import Data.List (intersperse)
-import Control.Monad.IO.Class (liftIO)
 
 newtype City = City { unCity :: String } deriving (Show, Read)
 data Itinerary = Origin | Destination deriving (Show, Read)
@@ -64,12 +63,15 @@ citiesToString cities = foldl1 (++) (intersperse " or " (map unCity cities))
 
 -- | 'step' function describes how the flow navigates from each step to the next
 instance IsState Suspended where
-  step (Suspended AskCity s) = cont ("Where are you flying " ++ itin' ++ "?") (\ (Answer i) -> next =<< liftIO (fetchCity i))
+  step (Suspended AskCity s) = cont
+    ("Where are you flying " ++ itin' ++ "?")
+    (fetchAnswers
+      "No airport was found."
+      fetchCity
+      (return . Suspended AskAirport . (, s)) -- more than one airports were found
+      (return . Suspended AskConfirm . (, s)) -- just one airport was found
+    )
     where
-      next ls@(h:n:_) = return $ Suspended AskAirport (ls, s)
-      next   [h]      = return $ Suspended AskConfirm (h, s)
-      next    _       = throwAnswerError "No airport found"
-
       itin' = case s of
         Origin -> "from"
         Destination -> "to"
@@ -82,17 +84,17 @@ instance IsState Suspended where
     )
 
   step (Suspended AskConfirm (city, itin)) = cont
-    "Please confirm you selection."
+    ("Please confirm you selection: " ++ unCity city)
     (yesNoAnswer
-      (do
-        tell ["A) ..."]
+      (do -- yes
+        tell "A) Confirmed"
         return $ Suspended AskFinal $ AirportResult itin city)
-      (do
-        tell ["Select another city"]
+      (do -- no
+        tell "Select another city"
         return $ Suspended AskCity itin
       )
     )
 
   step p@(Suspended AskFinal _) = end $ do
-    tell ["B) You selected your Airport"]
+    tell "B) You selected your Airport"
     return p

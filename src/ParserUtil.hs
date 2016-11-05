@@ -16,6 +16,7 @@ parseSuspended namespace = parsecSuspended namespace . toTryParsec where
 
   toTryParsec :: [ParsecT String u Identity t] -> ParsecT String u Identity t
   toTryParsec (h:rest) = foldl1 (<|>) (map try rest) <|> h
+  toTryParsec _ = error "Empty list of parsers"
 
 -- | Parses @Suspended Stage as@ GADT, for example:
 -- @

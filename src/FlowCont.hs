@@ -2,22 +2,22 @@
 
 module FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..),
-  Cont(..), cont, start, end, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_,
-  tell,
-  -- (>-*),
+  Cont(..), cont, start, end, tell, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_, fetchAnswers,
   State(..), IsState(..),
   AnswerError(..), throwAnswerError, Answered, runAnswered) where
 
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Except (MonadError, throwError, runExceptT)
 import Control.Monad.Trans.Writer (WriterT, runWriterT)
-import Control.Monad.Writer.Lazy (MonadWriter(..), tell)
+import qualified Control.Monad.Writer.Lazy as W -- (MonadWriter(..), tell)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Arrow (first)
 
+import qualified Data.Text as T
 import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
 import Data.Foldable (find)
-import Data.Char (toLower)
+-- import Data.Char (toLower)
 
 import Control.Applicative.Utils ((<.>))
 
@@ -39,13 +39,17 @@ newtype AnswerError = AnswerError String
 -- Answer -> IO (Either AnswerError c)
 newtype Answered c = Answered {
     unAnswered :: ExceptT AnswerError (WriterT [String] IO) c
-  } deriving (Functor, Applicative, Monad, MonadError AnswerError, MonadWriter [String], MonadIO)
+  } deriving (Functor, Applicative, Monad, MonadError AnswerError, W.MonadWriter [String], MonadIO)
 
 runAnswered :: Answered a -> IO (Either AnswerError a, [String])
 runAnswered = runWriterT . runExceptT . unAnswered
 
 throwAnswerError :: String -> Answered a
 throwAnswerError = throwError . AnswerError
+
+-- | Add a message to the response
+tell :: String -> Answered ()
+tell = W.tell . return
 
 -- | Continue in the same flow
 cont :: IsState s => String -> (Answer String -> Answered s) -> Cont
@@ -127,8 +131,22 @@ selectAnswer errMsg acceptables (Answer i) = fromMaybe
   (throwAnswerError errMsg)
   (snd <$> find (elem i . fst) acceptables)
 
+selectAnswerLower :: String -> [([String], Answered a)] -> Answer String -> Answered a
+selectAnswerLower errMsg acceptables ans = selectAnswer
+  errMsg
+  (map (first $ map toLower) acceptables)
+  (toLower <$> ans)
+
 yesNoAnswer :: Answered a -> Answered a -> Answer String -> Answered a
 yesNoAnswer yesAns noAns ans = selectAnswer
   "Please answer with either yes or no."
   [(["y", "yes"], yesAns), (["n", "no"], noAns)]
-  (map toLower <$> ans)
+  (toLower <$> ans)
+
+fetchAnswers :: String -> (String -> IO [b]) -> ([b] -> Answered a) -> (b -> Answered a) -> Answer String -> Answered a
+fetchAnswers errMsg f cs c (Answer i) = next =<< liftIO (f i) where
+  next ls@(_:_:_) = cs ls
+  next   [h]      = c h
+  next    _       = throwAnswerError errMsg
+
+toLower = T.unpack . T.toLower . T.strip . T.pack
