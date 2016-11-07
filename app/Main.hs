@@ -38,7 +38,7 @@ server = do
   S.post "/" $ do
       answer <- S.param "answer"
       stack  <- S.param "stack" `S.rescue` const (return "[]")
-      res <- liftIO $ catch (Right <$> Flows.receiveAnswer Flows.TryAtHome stack answer) handler
+      res <- liftIO $ catch (Right <$> Flows.receiveAnswer Flows.BookATicket stack answer) handler
       either (S.raise . fromString) S.json res
 
       where

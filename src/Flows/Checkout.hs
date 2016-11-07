@@ -2,8 +2,10 @@
 
 module Flows.Checkout (Suspended(Suspended), Stage(..), FinalResult) where
 
-import FlowCont (Answer(..), IsQuestion(..), IsState(..),
-  cont, end, withMessage)
+import FlowCont (Answer(..), IsState(..), Answered(..),
+  cont, end,
+  tell,
+  IsFlow(..), deserialize)
 import ParserUtil (parseSuspended, parseStage, ReadParsec(..))
 
 newtype BillingInfo = BillingInfo String deriving (Read, Show)
@@ -37,12 +39,12 @@ instance ReadParsec Suspended where
     where
       read' name = parseStage name . Suspended
 
--- | Questions that are presented to the user at each step of this flow
-instance IsQuestion Suspended where
-  ask (Suspended AskBillingInfo _) = Just "What is your credit card number?"
-  ask (Suspended AskFinal       _) = Nothing
-
 -- | 'step' function describes how the flow navigates from each step to the next
 instance IsState Suspended where
-  step (Suspended AskBillingInfo s) (Answer i) = return $
-    end (Suspended AskFinal $ BillingInfo i) `withMessage` "Your billing info saved."
+  step (Suspended AskBillingInfo s) = cont
+    "What is your credit card number?"
+    (return . Suspended AskFinal . BillingInfo . unAnswer)
+
+  step s@(Suspended AskFinal _) = end $ do
+    tell "Your credit card info saved!"
+    return s
