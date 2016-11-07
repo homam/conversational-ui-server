@@ -47,7 +47,7 @@ instance Read Suspended where
 instance ReadParsec Suspended where
   readParsec = parseSuspended "Airport" [
         read' "AskCity"      AskCity
-      , read' "AskAirport" AskAirport
+      , read' "AskAirport"   AskAirport
       , read' "AskConfirm"   AskConfirm
       , read' "AskFinal"     AskFinal
     ]
@@ -84,7 +84,7 @@ instance IsState Suspended where
     )
 
   step (Suspended AskConfirm (city, itin)) = cont
-    ("Please confirm you selection: " ++ unCity city)
+    ("Please confirm your selection: " ++ unCity city)
     (yesNoAnswer
       (do -- yes
         tell "A) Confirmed"

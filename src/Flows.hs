@@ -31,8 +31,12 @@ test =
   >>= next "yes"
   >>= next "Amsterdam"
   >>= next "yes"
-  >>= next "--"
-  >>= next "2"
+  >>= next "23 Dec 2015"
+  >>= next "23 Dec 2016"
+  >>= next "Nov 21 2016"
+  >>= next "7 Jan 2017"
+  -- >>= next "--"
+  -- >>= next "2"
   >>= info
     where
       next = next' BookATicket

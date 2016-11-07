@@ -2,7 +2,9 @@
 
 module FlowCont (Stack, serialize, deserialize, stack, IsFlow(..),
   Answer(..),
-  Cont(..), cont, start, end, tell, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_, fetchAnswers,
+  Cont(..), cont, start, end, tell,
+  matchAnswer, matchAnswerLower,
+  readAnswerF, readAnswer, intAnswer, selectAnswer, yesNoAnswer, validateAnswer_, fetchAnswers, oneOf,
   State(..), IsState(..),
   AnswerError(..), throwAnswerError, Answered, runAnswered) where
 
@@ -17,8 +19,8 @@ import qualified Data.Text as T
 import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
 import Data.Foldable (find)
--- import Data.Char (toLower)
 
+import Control.Monad (msum)
 import Control.Applicative.Utils ((<.>))
 
 -- | Answer from user
@@ -113,10 +115,13 @@ validateAnswer validator cwm (Answer i) = either
   (validator i)
 
 readAnswer :: Read b => String -> (b -> Answered a) -> Answer String -> Answered a
-readAnswer errMsg cwm (Answer i) = maybe
+readAnswer = readAnswerF readMaybe
+
+readAnswerF :: Read b => (String -> Maybe b) -> String -> (b -> Answered a) -> Answer String -> Answered a
+readAnswerF readF errMsg cwm (Answer i) = maybe
   (throwAnswerError errMsg)
   cwm
-  (readMaybe i)
+  (readF i)
 
 validateAnswer_ :: (String -> IO (Either String b)) -> (b -> Answered a) -> Answer String -> Answered a
 validateAnswer_ validator cwm (Answer i) = liftIO (validator i) >>= either
@@ -126,16 +131,17 @@ validateAnswer_ validator cwm (Answer i) = liftIO (validator i) >>= either
 intAnswer :: (Int -> Answered a) -> Answer String -> Answered a
 intAnswer = readAnswer "Please provide a number."
 
-selectAnswer :: String -> [([String], Answered a)] -> Answer String -> Answered a
-selectAnswer errMsg acceptables (Answer i) = fromMaybe
-  (throwAnswerError errMsg)
-  (snd <$> find (elem i . fst) acceptables)
+matchAnswer :: Eq i => [([i], Answered a)] -> Answer i -> Maybe (Answered a)
+matchAnswer acceptables (Answer i) = snd <$> find (elem i . fst) acceptables
+
+matchAnswerLower :: [([String], Answered a)] -> Answer String -> Maybe (Answered a)
+matchAnswerLower acceptables ans = matchAnswer (map (first $ map toLower) acceptables) (toLower <$> ans)
+
+selectAnswer :: Eq i => String -> [([i], Answered a)] -> Answer i -> Answered a
+selectAnswer errMsg p = fromMaybe (throwAnswerError errMsg) . matchAnswer p
 
 selectAnswerLower :: String -> [([String], Answered a)] -> Answer String -> Answered a
-selectAnswerLower errMsg acceptables ans = selectAnswer
-  errMsg
-  (map (first $ map toLower) acceptables)
-  (toLower <$> ans)
+selectAnswerLower errMsg acceptables = fromMaybe (throwAnswerError errMsg) . matchAnswerLower acceptables
 
 yesNoAnswer :: Answered a -> Answered a -> Answer String -> Answered a
 yesNoAnswer yesAns noAns ans = selectAnswer
@@ -148,5 +154,8 @@ fetchAnswers errMsg f cs c (Answer i) = next =<< liftIO (f i) where
   next ls@(_:_:_) = cs ls
   next   [h]      = c h
   next    _       = throwAnswerError errMsg
+
+oneOf :: String -> [Answer i -> Maybe (Answered b)] -> Answer i -> Answered b
+oneOf errMsg list i = fromMaybe (throwAnswerError errMsg) (msum $ map ($ i) list)
 
 toLower = T.unpack . T.toLower . T.strip . T.pack
